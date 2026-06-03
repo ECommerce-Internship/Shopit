@@ -1,8 +1,8 @@
-using ECommerce.API.Domain.Exceptions;
+using Shopit.Domain.Exceptions;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 
-namespace ECommerce.API.Middleware;
+namespace Shopit.API.Middleware;
 
 public class ExceptionHandlingMiddleware
 {

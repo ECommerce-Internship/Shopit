@@ -1,4 +1,4 @@
-namespace ECommerce.API.Domain.Exceptions;
+namespace Shopit.Domain.Exceptions;
 
 public class ForbiddenException : Exception
 {

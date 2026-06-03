@@ -1,4 +1,4 @@
-using ECommerce.API.Middleware;
+using Shopit.API.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 

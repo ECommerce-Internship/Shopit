@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Shopit.API/Shopit.API.csproj" />
+  <Project Path="Shopit.Domain/Shopit.Domain.csproj" />
+</Solution>

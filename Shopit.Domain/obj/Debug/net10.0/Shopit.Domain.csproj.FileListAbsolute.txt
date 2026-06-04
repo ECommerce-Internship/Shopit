@@ -1,0 +1,11 @@
+c:\Aspire\Shopit-develop\Shopit.Domain\bin\Debug\net10.0\Shopit.Domain.deps.json
+C:\Aspire\Shopit-develop\Shopit.Domain\bin\Debug\net10.0\Shopit.Domain.dll
+C:\Aspire\Shopit-develop\Shopit.Domain\bin\Debug\net10.0\Shopit.Domain.pdb
+C:\Aspire\Shopit-develop\Shopit.Domain\obj\Debug\net10.0\Shopit.Domain.GeneratedMSBuildEditorConfig.editorconfig
+C:\Aspire\Shopit-develop\Shopit.Domain\obj\Debug\net10.0\Shopit.Domain.AssemblyInfoInputs.cache
+C:\Aspire\Shopit-develop\Shopit.Domain\obj\Debug\net10.0\Shopit.Domain.AssemblyInfo.cs
+C:\Aspire\Shopit-develop\Shopit.Domain\obj\Debug\net10.0\Shopit.Domain.csproj.CoreCompileInputs.cache
+C:\Aspire\Shopit-develop\Shopit.Domain\obj\Debug\net10.0\Shopit.Domain.dll
+C:\Aspire\Shopit-develop\Shopit.Domain\obj\Debug\net10.0\refint\Shopit.Domain.dll
+C:\Aspire\Shopit-develop\Shopit.Domain\obj\Debug\net10.0\Shopit.Domain.pdb
+c:\Aspire\Shopit-develop\Shopit.Domain\obj\Debug\net10.0\ref\Shopit.Domain.dll

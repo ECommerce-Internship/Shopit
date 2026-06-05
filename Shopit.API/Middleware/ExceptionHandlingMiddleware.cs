@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 
 namespace Shopit.API.Middleware;
-
 public class ExceptionHandlingMiddleware
 {
     private readonly RequestDelegate _next;

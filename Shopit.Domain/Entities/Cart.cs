@@ -1,9 +1,11 @@
+using Shopit.Domain.Enums;
+
 namespace Shopit.Domain.Entities;
 
 public class Cart
 {
     public int Id { get; set; }
-    public string Status { get; set; } = "active";
+    public CartStatus Status { get; set; } = CartStatus.Active;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public int UserId { get; set; }

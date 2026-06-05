@@ -1,10 +1,12 @@
+using Shopit.Domain.Enums;
+
 namespace Shopit.Domain.Entities;
 
 public class Coupon
 {
     public int Id { get; set; }
     public string Code { get; set; } = string.Empty;
-    public string DiscountType { get; set; } = "percent";
+    public CouponDiscountType DiscountType { get; set; } = CouponDiscountType.Percent;
     public decimal DiscountValue { get; set; }
     public decimal? MinimumOrderAmount { get; set; }
     public int? UsageLimit { get; set; }

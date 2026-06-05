@@ -131,5 +131,10 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<Payment>()
             .Property(p => p.Amount).HasPrecision(10, 2);
+        modelBuilder.Entity<Coupon>()
+            .Property(c => c.MinimumOrderAmount).HasPrecision(10, 2);
+
+        modelBuilder.Entity<Order>()
+            .Property(o => o.DiscountAmount).HasPrecision(10, 2);
     }
 }

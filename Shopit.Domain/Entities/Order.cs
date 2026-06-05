@@ -1,9 +1,11 @@
+using Shopit.Domain.Enums;
+
 namespace Shopit.Domain.Entities;
 
 public class Order
 {
     public int Id { get; set; }
-    public string Status { get; set; } = "pending";
+    public OrderStatus Status { get; set; } = OrderStatus.Pending;
     public decimal TotalAmount { get; set; }
     public decimal DiscountAmount { get; set; } = 0;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

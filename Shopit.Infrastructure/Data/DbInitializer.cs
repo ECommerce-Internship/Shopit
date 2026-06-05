@@ -1,4 +1,5 @@
 using Shopit.Domain.Entities;
+using Shopit.Domain.Enums;
 
 namespace Shopit.Infrastructure.Data;
 
@@ -39,7 +40,7 @@ public static class DbInitializer
             FullName = "Admin User",
             Email = "admin@shopit.com",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123"),
-            Role = "admin"
+            Role = UserRole.Admin
         };
 
         context.Users.Add(admin);

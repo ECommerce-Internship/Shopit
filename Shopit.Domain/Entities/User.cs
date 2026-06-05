@@ -1,3 +1,5 @@
+using Shopit.Domain.Enums;
+
 namespace Shopit.Domain.Entities;
 
 public class User
@@ -6,7 +8,7 @@ public class User
     public string FullName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
-    public string Role { get; set; } = "customer";
+    public UserRole Role { get; set; } = UserRole.Customer;
     public string? Phone { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

@@ -1,29 +1,61 @@
+using Microsoft.OpenApi;
 using Shopit.API.Middleware;
 using Microsoft.EntityFrameworkCore;
 using Shopit.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
+const string DevelopmentCorsPolicy = "DevelopmentCorsPolicy";
+
+// Services
 builder.Services.AddControllers();
-builder.Services.AddOpenApi();
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddEndpointsApiExplorer();
+
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Shopit API",
+        Version = "v1"
+    });
+});
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(DevelopmentCorsPolicy, policy =>
+    {
+        policy
+            .WithOrigins(
+                "http://localhost:3000",
+                "https://localhost:3000",
+                "http://localhost:4200",
+                "https://localhost:4200",
+                "http://localhost:5173",
+                "https://localhost:5173")
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
 
 builder.Services.AddOpenApi();
 var app = builder.Build();
 
+// Middleware
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.UseSwagger();
 
-    using var scope = app.Services.CreateScope();
-    var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Shopit API v1");
+    });
 
-    context.Database.Migrate();
-    DbInitializer.Seed(context);
+    app.UseCors(DevelopmentCorsPolicy);
 }
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
+
 app.UseHttpsRedirection();
 
 app.MapControllers();

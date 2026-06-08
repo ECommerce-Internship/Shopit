@@ -1,5 +1,7 @@
 using Microsoft.OpenApi;
 using Shopit.API.Middleware;
+using Microsoft.EntityFrameworkCore;
+using Shopit.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -36,6 +38,7 @@ builder.Services.AddCors(options =>
     });
 });
 
+builder.Services.AddOpenApi();
 var app = builder.Build();
 
 // Middleware

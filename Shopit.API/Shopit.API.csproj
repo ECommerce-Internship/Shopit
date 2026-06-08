@@ -7,11 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Shopit.Domain\Shopit.Domain.csproj" />
+    <ProjectReference Include="..\Shopit.Infrastructure\Shopit.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

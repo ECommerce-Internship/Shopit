@@ -1,9 +1,10 @@
 using Asp.Versioning;
 using FluentValidation;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Shopit.Application.DTOs.Auth;
 using Shopit.Application.Interfaces;
+using Shopit.Domain.Entities;
+using Shopit.Domain.Enums;
 
 namespace Shopit.API.Controllers;
 
@@ -17,11 +18,16 @@ public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
     private readonly IValidator<RegisterRequest> _registerValidator;
+    private readonly IJwtTokenService _jwtTokenService;
 
-    public AuthController(IAuthService authService, IValidator<RegisterRequest> registerValidator)
+    public AuthController(
+        IAuthService authService,
+        IValidator<RegisterRequest> registerValidator,
+        IJwtTokenService jwtTokenService)
     {
         _authService = authService;
         _registerValidator = registerValidator;
+        _jwtTokenService = jwtTokenService;
     }
 
     /// <summary>
@@ -54,27 +60,20 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Refreshes an access token using a valid refresh token.
+    /// TEMPORARY: Returns a test JWT token for SCRUM-30 verification.
     /// </summary>
-    [HttpPost("refresh-token")]
-    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> RefreshToken([FromBody] string refreshToken)
+    [HttpGet("test-token")]
+    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    public IActionResult TestToken()
     {
-        var response = await _authService.RefreshTokenAsync(refreshToken);
-        return Ok(response);
-    }
+        var fakeUser = new User
+        {
+            Id = 1,
+            Email = "test@shopit.com",
+            Role = UserRole.Customer
+        };
 
-    /// <summary>
-    /// Logs out a user by revoking their refresh token.
-    /// </summary>
-    [HttpPost("logout")]
-    [Authorize]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> Logout([FromBody] string refreshToken)
-    {
-        await _authService.LogoutAsync(refreshToken);
-        return NoContent();
+        var token = _jwtTokenService.GenerateAccessToken(fakeUser);
+        return Ok(new { token });
     }
 }

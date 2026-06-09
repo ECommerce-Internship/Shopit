@@ -6,6 +6,9 @@
 # dotenv files
 .env
 
+# Machine-specific local configuration (use appsettings.Development.example.json as a template)
+appsettings.Development.json
+
 # User-specific files
 *.rsuser
 *.suo

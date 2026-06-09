@@ -36,7 +36,11 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "Shopit API",
         Version = "v1",
-        Description = "Shopit REST API"
+        Description = "Shopit REST API",
+        Contact = new OpenApiContact
+        {
+            Name = "Jason Rizk"
+        }
     });
 
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -46,7 +50,7 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "Bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Enter your JWT token."
+        Description = "Enter your JWT token. Example: Bearer eyJhbGci..."
     });
 
     options.AddSecurityRequirement(new OpenApiSecurityRequirement

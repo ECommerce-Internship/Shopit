@@ -1,27 +1,25 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
 using System.Security.Cryptography;
-using System.Text;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.IdentityModel.Tokens;
 using Shopit.Application.DTOs.Auth;
 using Shopit.Application.Interfaces;
 using Shopit.Domain.Entities;
 using Shopit.Domain.Enums;
 using Shopit.Domain.Exceptions;
 using Shopit.Infrastructure.Data;
+using Microsoft.Extensions.Configuration;
 
 namespace Shopit.Infrastructure.Services;
 
 public class AuthService : IAuthService
 {
     private readonly AppDbContext _db;
+    private readonly IJwtTokenService _jwtTokenService;
     private readonly IConfiguration _config;
 
-    public AuthService(AppDbContext db, IConfiguration config)
+    public AuthService(AppDbContext db, IJwtTokenService jwtTokenService, IConfiguration config)
     {
         _db = db;
+        _jwtTokenService = jwtTokenService;
         _config = config;
     }
 
@@ -43,7 +41,8 @@ public class AuthService : IAuthService
         _db.Users.Add(user);
         await _db.SaveChangesAsync();
 
-        var (accessToken, expiresIn) = GenerateAccessToken(user);
+        var accessToken = _jwtTokenService.GenerateAccessToken(user);
+        var expiresIn = int.Parse(_config["JwtSettings:ExpiryMinutes"] ?? "15") * 60;
         var refreshTokenValue = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
 
         _db.RefreshTokens.Add(new RefreshToken
@@ -66,7 +65,8 @@ public class AuthService : IAuthService
         if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             throw new UnauthorizedException("Invalid email or password.");
 
-        var (accessToken, expiresIn) = GenerateAccessToken(user);
+        var accessToken = _jwtTokenService.GenerateAccessToken(user);
+        var expiresIn = int.Parse(_config["JwtSettings:ExpiryMinutes"] ?? "15") * 60;
         var refreshTokenValue = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
 
         _db.RefreshTokens.Add(new RefreshToken
@@ -94,11 +94,10 @@ public class AuthService : IAuthService
         if (existing.ExpiresAt <= DateTime.UtcNow)
             throw new UnauthorizedException("Refresh token has expired.");
 
-        // Revoke old token (rotation)
         existing.IsRevoked = true;
 
-        // Generate new tokens
-        var (accessToken, expiresIn) = GenerateAccessToken(existing.User);
+        var accessToken = _jwtTokenService.GenerateAccessToken(existing.User);
+        var expiresIn = int.Parse(_config["JwtSettings:ExpiryMinutes"] ?? "15") * 60;
         var newRefreshTokenValue = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
 
         _db.RefreshTokens.Add(new RefreshToken
@@ -123,31 +122,6 @@ public class AuthService : IAuthService
 
         existing.IsRevoked = true;
         await _db.SaveChangesAsync();
-    }
-
-    private (string token, int expiresIn) GenerateAccessToken(User user)
-    {
-        var jwtSettings = _config.GetSection("JwtSettings");
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["SecretKey"]!));
-        var expiresIn = int.Parse(jwtSettings["ExpiresInSeconds"] ?? "3600");
-
-        var claims = new[]
-        {
-            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.Email, user.Email),
-            new Claim(ClaimTypes.Role, user.Role.ToString()),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-        };
-
-        var token = new JwtSecurityToken(
-            issuer: jwtSettings["Issuer"],
-            audience: jwtSettings["Audience"],
-            claims: claims,
-            expires: DateTime.UtcNow.AddSeconds(expiresIn),
-            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
-        );
-
-        return (new JwtSecurityTokenHandler().WriteToken(token), expiresIn);
     }
 
     private static AuthResponse BuildResponse(User user, string accessToken, string refreshToken, int expiresIn) =>

@@ -18,16 +18,13 @@ public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
     private readonly IValidator<RegisterRequest> _registerValidator;
-    private readonly IJwtTokenService _jwtTokenService;
 
     public AuthController(
         IAuthService authService,
-        IValidator<RegisterRequest> registerValidator,
-        IJwtTokenService jwtTokenService)
+        IValidator<RegisterRequest> registerValidator)
     {
         _authService = authService;
         _registerValidator = registerValidator;
-        _jwtTokenService = jwtTokenService;
     }
 
     /// <summary>
@@ -57,23 +54,5 @@ public class AuthController : ControllerBase
     {
         var response = await _authService.LoginAsync(request);
         return Ok(response);
-    }
-
-    /// <summary>
-    /// TEMPORARY: Returns a test JWT token for SCRUM-30 verification.
-    /// </summary>
-    [HttpGet("test-token")]
-    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
-    public IActionResult TestToken()
-    {
-        var fakeUser = new User
-        {
-            Id = 1,
-            Email = "test@shopit.com",
-            Role = UserRole.Customer
-        };
-
-        var token = _jwtTokenService.GenerateAccessToken(fakeUser);
-        return Ok(new { token });
     }
 }

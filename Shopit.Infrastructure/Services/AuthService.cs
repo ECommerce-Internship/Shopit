@@ -81,6 +81,50 @@ public class AuthService : IAuthService
         return BuildResponse(user, accessToken, refreshTokenValue, expiresIn);
     }
 
+    public async Task<AuthResponse> RefreshTokenAsync(string refreshToken)
+    {
+        var existing = await _db.RefreshTokens
+            .Include(rt => rt.User)
+            .FirstOrDefaultAsync(rt => rt.Token == refreshToken)
+            ?? throw new UnauthorizedException("Invalid refresh token.");
+
+        if (existing.IsRevoked)
+            throw new UnauthorizedException("Refresh token has been revoked.");
+
+        if (existing.ExpiresAt <= DateTime.UtcNow)
+            throw new UnauthorizedException("Refresh token has expired.");
+
+        // Revoke old token (rotation)
+        existing.IsRevoked = true;
+
+        // Generate new tokens
+        var (accessToken, expiresIn) = GenerateAccessToken(existing.User);
+        var newRefreshTokenValue = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+
+        _db.RefreshTokens.Add(new RefreshToken
+        {
+            Token = newRefreshTokenValue,
+            UserId = existing.UserId,
+            ExpiresAt = DateTime.UtcNow.AddDays(7)
+        });
+
+        await _db.SaveChangesAsync();
+
+        return BuildResponse(existing.User, accessToken, newRefreshTokenValue, expiresIn);
+    }
+
+    public async Task LogoutAsync(string refreshToken)
+    {
+        var existing = await _db.RefreshTokens
+            .FirstOrDefaultAsync(rt => rt.Token == refreshToken);
+
+        if (existing is null || existing.IsRevoked)
+            return;
+
+        existing.IsRevoked = true;
+        await _db.SaveChangesAsync();
+    }
+
     private (string token, int expiresIn) GenerateAccessToken(User user)
     {
         var jwtSettings = _config.GetSection("JwtSettings");

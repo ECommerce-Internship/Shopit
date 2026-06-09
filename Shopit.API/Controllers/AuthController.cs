@@ -1,5 +1,6 @@
 using Asp.Versioning;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Shopit.Application.DTOs.Auth;
 using Shopit.Application.Interfaces;
@@ -50,5 +51,30 @@ public class AuthController : ControllerBase
     {
         var response = await _authService.LoginAsync(request);
         return Ok(response);
+    }
+
+    /// <summary>
+    /// Refreshes an access token using a valid refresh token.
+    /// </summary>
+    [HttpPost("refresh-token")]
+    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> RefreshToken([FromBody] string refreshToken)
+    {
+        var response = await _authService.RefreshTokenAsync(refreshToken);
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Logs out a user by revoking their refresh token.
+    /// </summary>
+    [HttpPost("logout")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Logout([FromBody] string refreshToken)
+    {
+        await _authService.LogoutAsync(refreshToken);
+        return NoContent();
     }
 }

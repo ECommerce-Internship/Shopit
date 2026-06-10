@@ -4,12 +4,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Shopit.Application.DTOs.Auth;
 using Shopit.Application.Interfaces;
+using System.Security.Claims;
 
 namespace Shopit.API.Controllers;
 
-/// <summary>
-/// Handles user authentication.
-/// </summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/auth")]
@@ -17,16 +15,21 @@ public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
     private readonly IValidator<RegisterRequest> _registerValidator;
+    private readonly IValidator<UpdateProfileRequest> _updateProfileValidator;
+    private readonly IValidator<ChangePasswordRequest> _changePasswordValidator;
 
-    public AuthController(IAuthService authService, IValidator<RegisterRequest> registerValidator)
+    public AuthController(
+        IAuthService authService,
+        IValidator<RegisterRequest> registerValidator,
+        IValidator<UpdateProfileRequest> updateProfileValidator,
+        IValidator<ChangePasswordRequest> changePasswordValidator)
     {
         _authService = authService;
         _registerValidator = registerValidator;
+        _updateProfileValidator = updateProfileValidator;
+        _changePasswordValidator = changePasswordValidator;
     }
 
-    /// <summary>
-    /// Registers a new customer account.
-    /// </summary>
     [HttpPost("register")]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -41,9 +44,6 @@ public class AuthController : ControllerBase
         return CreatedAtAction(nameof(Register), response);
     }
 
-    /// <summary>
-    /// Authenticates a user and returns a token pair.
-    /// </summary>
     [HttpPost("login")]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -53,9 +53,6 @@ public class AuthController : ControllerBase
         return Ok(response);
     }
 
-    /// <summary>
-    /// Refreshes an access token using a valid refresh token.
-    /// </summary>
     [HttpPost("refresh-token")]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -65,9 +62,6 @@ public class AuthController : ControllerBase
         return Ok(response);
     }
 
-    /// <summary>
-    /// Logs out a user by revoking their refresh token.
-    /// </summary>
     [HttpPost("logout")]
     [Authorize]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -76,5 +70,57 @@ public class AuthController : ControllerBase
     {
         await _authService.LogoutAsync(refreshToken);
         return NoContent();
+    }
+
+    [HttpGet("me")]
+    [Authorize]
+    [ProducesResponseType(typeof(UserProfileResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetProfile()
+    {
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var response = await _authService.GetProfileAsync(userId);
+        return Ok(response);
+    }
+
+    [HttpPut("me")]
+    [Authorize]
+    [ProducesResponseType(typeof(UserProfileResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest request)
+    {
+        var validation = await _updateProfileValidator.ValidateAsync(request);
+        if (!validation.IsValid)
+            return BadRequest(validation.Errors.Select(e => e.ErrorMessage));
+
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var response = await _authService.UpdateProfileAsync(userId, request);
+        return Ok(response);
+    }
+
+    [HttpPost("change-password")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+    {
+        var validation = await _changePasswordValidator.ValidateAsync(request);
+        if (!validation.IsValid)
+            return BadRequest(validation.Errors.Select(e => e.ErrorMessage));
+
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        await _authService.ChangePasswordAsync(userId, request);
+        return NoContent();
+    }
+
+    [HttpGet("admin-test")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public IActionResult AdminTest()
+    {
+        return Ok("You have Admin access.");
     }
 }

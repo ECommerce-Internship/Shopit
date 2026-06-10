@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using Shopit.Infrastructure.Data;
 using StackExchange.Redis;
 using Microsoft.OpenApi;
+using Shopit.Infrastructure.Repositories;
+using Shopit.Application.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -56,6 +58,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));
+
+builder.Services.AddScoped<ICategoryService, CategoryService>();
 
 var app = builder.Build();
 

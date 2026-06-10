@@ -21,6 +21,7 @@ public class CategoryService : ICategoryService
     {
         var categories = await _context.Categories
             .Include(c => c.SubCategories)
+            .Where(c => c.ParentCategoryId == null)  // only root categories
             .ToListAsync();
 
         Log.Information("Retrieved {Count} categories", categories.Count);
@@ -53,7 +54,14 @@ public class CategoryService : ICategoryService
             Log.Warning("Duplicate category name attempted: {Name}", request.Name);
             throw new ConflictException($"A category with the name '{request.Name}' already exists.");
         }
+        if (request.ParentCategoryId.HasValue)
+        {
+            var parentExists = await _context.Categories
+                .AnyAsync(c => c.Id == request.ParentCategoryId.Value);
 
+            if (!parentExists)
+                throw new NotFoundException($"Parent category with id {request.ParentCategoryId.Value} was not found.");
+        }
         var category = new Category
         {
             Name = request.Name,
@@ -77,6 +85,30 @@ public class CategoryService : ICategoryService
 
         if (category is null)
             throw new NotFoundException($"Category with ID {id} was not found.");
+        var nameExists = await _context.Categories
+            .AnyAsync(c => c.Name == request.Name && c.Id != id);
+        if (nameExists)
+        {
+            throw new ConflictException($"A category with the name '{request.Name}' already exists.");
+        }
+        // Guard 1: prevent self-referencing
+        if (request.ParentCategoryId == category.Id)
+        {
+            throw new ConflictException("A category cannot be its own parent.");
+        }
+
+        // Guard 2: prevent circular reference (e.g. A→B→C→A)
+        if (request.ParentCategoryId.HasValue)
+        {
+            var ancestorId = request.ParentCategoryId;
+            while (ancestorId.HasValue)
+            {
+                if (ancestorId == category.Id)
+                    throw new ConflictException("Assigning this parent would create a circular reference.");
+                var ancestor = await _context.Categories.FindAsync(ancestorId.Value);
+                ancestorId = ancestor?.ParentCategoryId;
+            }
+        }
 
         category.Name = request.Name;
         category.Slug = request.Name.ToLower().Replace(" ", "-");

@@ -1,11 +1,17 @@
-using Asp.Versioning;
-using Microsoft.OpenApi.Models;
-using Shopit.API.Middleware;
-using Microsoft.EntityFrameworkCore;
-using Shopit.Infrastructure.Data;
 using System.Reflection;
+using Asp.Versioning;
+using FluentValidation;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
+using OfficeOpenXml;
+using Shopit.API.Middleware;
+using Shopit.Application.Products;
+using Shopit.Infrastructure.Data;
+using Shopit.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
 
 const string DevelopmentCorsPolicy = "DevelopmentCorsPolicy";
 
@@ -88,6 +94,10 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddValidatorsFromAssembly(typeof(IProductService).Assembly);
+
+builder.Services.AddScoped<IProductService, ProductService>();
 
 var app = builder.Build();
 

@@ -139,4 +139,49 @@ public class AuthService : IAuthService
                 Role = user.Role.ToString()
             }
         };
+public async Task<UserProfileResponse> GetProfileAsync(int userId)
+{
+    var user = await _db.Users.FindAsync(userId)
+        ?? throw new NotFoundException("User not found.");
+
+    return MapToProfileResponse(user);
 }
+
+public async Task<UserProfileResponse> UpdateProfileAsync(int userId, UpdateProfileRequest request)
+{
+    var user = await _db.Users.FindAsync(userId)
+        ?? throw new NotFoundException("User not found.");
+
+    user.FirstName = request.FirstName;
+    user.LastName = request.LastName;
+    user.Phone = request.PhoneNumber;
+
+    await _db.SaveChangesAsync();
+
+    return MapToProfileResponse(user);
+}
+
+public async Task ChangePasswordAsync(int userId, ChangePasswordRequest request)
+{
+    var user = await _db.Users.FindAsync(userId)
+        ?? throw new NotFoundException("User not found.");
+
+    if (!BCrypt.Net.BCrypt.Verify(request.CurrentPassword, user.PasswordHash))
+        throw new UnauthorizedException("Current password is incorrect.");
+
+    user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword, workFactor: 12);
+
+    await _db.SaveChangesAsync();
+}
+
+private static UserProfileResponse MapToProfileResponse(User user) =>
+    new()
+    {
+        Id = user.Id,
+        FirstName = user.FirstName,
+        LastName = user.LastName,
+        Email = user.Email,
+        Phone = user.Phone,
+        Role = user.Role.ToString(),
+        CreatedAt = user.CreatedAt
+    };}

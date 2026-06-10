@@ -1,9 +1,16 @@
 using Asp.Versioning;
+using FluentValidation;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Shopit.API.Middleware;
-using Microsoft.EntityFrameworkCore;
+using Shopit.Application.Interfaces;
+using Shopit.Application.Validators;
 using Shopit.Infrastructure.Data;
+using Shopit.Infrastructure.Services;
 using System.Reflection;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -69,25 +76,44 @@ builder.Services.AddSwaggerGen(options =>
         options.IncludeXmlComments(xmlPath);
 });
 
+// JWT Authentication
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtSettings["Issuer"],
+            ValidAudience = jwtSettings["Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(jwtSettings["SecretKey"]!))
+        };
+    });
+
+builder.Services.AddAuthorization();
+
+// DB
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// App services
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
+builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(DevelopmentCorsPolicy, policy =>
     {
-        policy
-            .WithOrigins(
-                "http://localhost:3000",
-                "https://localhost:3000",
-                "http://localhost:4200",
-                "https://localhost:4200",
-                "http://localhost:5173",
-                "https://localhost:5173")
-            .AllowAnyHeader()
-            .AllowAnyMethod();
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
     });
 });
-
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 var app = builder.Build();
 
@@ -99,6 +125,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(options =>
     {
         options.SwaggerEndpoint("/swagger/v1/swagger.json", "Shopit API v1");
+        options.RoutePrefix = "swagger";
     });
 
     app.UseCors(DevelopmentCorsPolicy);
@@ -108,6 +135,8 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 
 app.Run();

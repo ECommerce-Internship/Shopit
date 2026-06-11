@@ -37,7 +37,8 @@ public static class DbInitializer
 
         var admin = new User
         {
-            FullName = "Admin User",
+            FirstName = "Admin",
+            LastName = "User",
             Email = "admin@shopit.com",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123"),
             Role = UserRole.Admin

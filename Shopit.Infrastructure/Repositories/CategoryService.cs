@@ -18,15 +18,16 @@ public class CategoryService : ICategoryService
     }
 
     public async Task<List<CategoryResponse>> GetAllAsync()
-    {
-        var categories = await _context.Categories
-            .Include(c => c.SubCategories)
-            .ToListAsync();
+{
+    var categories = await _context.Categories
+        .Include(c => c.SubCategories)
+        .Where(c => c.ParentCategoryId == null)
+        .ToListAsync();
 
-        Log.Information("Retrieved {Count} categories", categories.Count);
+    Log.Information("Retrieved {Count} root categories", categories.Count);
 
-        return categories.Select(MapToResponse).ToList();
-    }
+    return categories.Select(MapToResponse).ToList();
+}
 
     public async Task<CategoryResponse> GetByIdAsync(int id)
     {
@@ -53,7 +54,14 @@ public class CategoryService : ICategoryService
             Log.Warning("Duplicate category name attempted: {Name}", request.Name);
             throw new ConflictException($"A category with the name '{request.Name}' already exists.");
         }
+        if (request.ParentCategoryId.HasValue)
+        {
+            var parentExists = await _context.Categories
+                .AnyAsync(c => c.Id == request.ParentCategoryId.Value);
 
+            if (!parentExists)
+                throw new NotFoundException($"Parent category with ID {request.ParentCategoryId.Value} was not found.");
+        }
         var category = new Category
         {
             Name = request.Name,
@@ -80,6 +88,14 @@ public class CategoryService : ICategoryService
         // Duplicate name check — same as CreateAsync
     var nameExists = await _context.Categories
         .AnyAsync(c => c.Name.ToLower() == request.Name.ToLower() && c.Id != id);
+        if (request.ParentCategoryId.HasValue)
+        {
+            var parentExists = await _context.Categories
+        .   AnyAsync(c => c.Id == request.ParentCategoryId.Value);
+
+        if (!parentExists)
+            throw new NotFoundException($"Parent category with ID {request.ParentCategoryId.Value} was not found.");
+        }
 
     if (nameExists)
         throw new ConflictException($"A category with the name '{request.Name}' already exists.");

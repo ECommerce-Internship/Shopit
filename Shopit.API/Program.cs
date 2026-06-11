@@ -128,8 +128,8 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
-builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
-builder.Services.AddValidatorsFromAssemblyContaining<CreateCategoryRequestValidator>();
+builder.Services.AddValidatorsFromAssembly(typeof(RegisterRequestValidator).Assembly);
+builder.Services.AddValidatorsFromAssembly(typeof(CreateCategoryRequestValidator).Assembly);
 
 var app = builder.Build();
 

@@ -3,4 +3,5 @@
   <Project Path="Shopit.Application/Shopit.Application.csproj" />
   <Project Path="Shopit.Domain/Shopit.Domain.csproj" />
   <Project Path="Shopit.Infrastructure/Shopit.Infrastructure.csproj" />
+  <Project Path="Shopit.Tests/Shopit.Tests.csproj" />
 </Solution>

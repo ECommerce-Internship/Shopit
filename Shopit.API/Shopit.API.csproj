@@ -9,6 +9,8 @@
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Mvc" Version="8.1.0" />
     <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" Version="8.1.0" />
+    <PackageReference Include="EPPlus" Version="7.*" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.8" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.0" />
@@ -21,5 +23,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Shopit.Application\Shopit.Application.csproj" />
     <ProjectReference Include="..\Shopit.Infrastructure\Shopit.Infrastructure.csproj" />
+    <ProjectReference Include="..\Shopit.Application\Shopit.Application.csproj" />
   </ItemGroup>
 </Project>

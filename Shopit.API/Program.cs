@@ -1,9 +1,11 @@
+using System.Reflection;
 using Asp.Versioning;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using OfficeOpenXml;
 using Shopit.API.Middleware;
 using Shopit.Application.Interfaces;
 using Shopit.Application.Validators;
@@ -13,6 +15,8 @@ using System.Reflection;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+
+ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
 
 const string DevelopmentCorsPolicy = "DevelopmentCorsPolicy";
 
@@ -109,6 +113,13 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader();
     });
 });
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddValidatorsFromAssembly(typeof(IProductService).Assembly);
+
+builder.Services.AddScoped<IProductService, ProductService>();
 
 var app = builder.Build();
 

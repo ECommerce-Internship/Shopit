@@ -65,6 +65,9 @@ public class AuthService : IAuthService
         if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             throw new UnauthorizedException("Invalid email or password.");
 
+        if (!user.IsActive)
+            throw new UnauthorizedException("Your account has been deactivated.");
+
         var accessToken = _jwtTokenService.GenerateAccessToken(user);
         var expiresIn = int.Parse(_config["JwtSettings:ExpiryMinutes"] ?? "15") * 60;
         var refreshTokenValue = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));

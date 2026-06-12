@@ -1,24 +1,27 @@
+using System.Reflection;
+using System.Text;
 using Asp.Versioning;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using OfficeOpenXml;
 using Serilog;
 using Serilog.Events;
 using Shopit.API.Middleware;
 using Shopit.Application.Interfaces;
+using Shopit.Application.Products;
 using Shopit.Application.Validators;
 using Shopit.Infrastructure.Data;
 using Shopit.Infrastructure.Repositories;
 using Shopit.Infrastructure.Services;
 using StackExchange.Redis;
-using System.Reflection;
-using System.Text;
+
+ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Serilog configured AFTER builder so it can read from configuration
 builder.Host.UseSerilog((context, config) =>
 {
     config
@@ -128,8 +131,11 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<IProductService, ProductService>();
+
 builder.Services.AddValidatorsFromAssembly(typeof(RegisterRequestValidator).Assembly);
 builder.Services.AddValidatorsFromAssembly(typeof(CreateCategoryRequestValidator).Assembly);
+builder.Services.AddValidatorsFromAssembly(typeof(IProductService).Assembly);
 
 var app = builder.Build();
 

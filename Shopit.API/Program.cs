@@ -1,37 +1,18 @@
-using System.Reflection;
-using System.Text;
 using Asp.Versioning;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using OfficeOpenXml;
-using Serilog;
-using Serilog.Events;
 using Shopit.API.Middleware;
 using Shopit.Application.Interfaces;
-using Shopit.Application.Products;
 using Shopit.Application.Validators;
 using Shopit.Infrastructure.Data;
-using Shopit.Infrastructure.Repositories;
 using Shopit.Infrastructure.Services;
-using StackExchange.Redis;
-
-ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+using System.Reflection;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
-
-builder.Host.UseSerilog((context, config) =>
-{
-    config
-        .MinimumLevel.Information()
-        .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
-        .Enrich.FromLogContext()
-        .Enrich.WithMachineName()
-        .WriteTo.Console()
-        .WriteTo.Seq(context.Configuration["Seq:ServerUrl"]!);
-});
 
 const string DevelopmentCorsPolicy = "DevelopmentCorsPolicy";
 
@@ -112,6 +93,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
+builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddScoped<ILowStockAlertService, LowStockAlertServiceStub>();
+builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(DevelopmentCorsPolicy, policy =>
@@ -142,6 +132,13 @@ var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
+    using (var scope = app.Services.CreateScope())
+    {
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        context.Database.Migrate();
+        DbInitializer.Seed(context);
+    }
+
     app.UseSwagger();
     app.UseSwaggerUI(options =>
     {
@@ -149,20 +146,7 @@ if (app.Environment.IsDevelopment())
         options.RoutePrefix = "swagger";
     });
     app.UseCors(DevelopmentCorsPolicy);
-
-    using var scope = app.Services.CreateScope();
-    var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    DbInitializer.Seed(context);
 }
-
-app.UseSerilogRequestLogging(options =>
-{
-    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
-    {
-        diagnosticContext.Set("ClientIp", httpContext.Connection.RemoteIpAddress?.ToString());
-        diagnosticContext.Set("UserId", httpContext.User?.FindFirst("sub")?.Value ?? "anonymous");
-    };
-});
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseHttpsRedirection();

@@ -1,0 +1,7 @@
+namespace Shopit.Application.DTOs.Categories;
+
+public class UpdateCategoryRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public int? ParentCategoryId { get; set; }
+}

@@ -1,4 +1,7 @@
 using FluentAssertions;
+using Moq;
+using Shopit.Application.Common;
+using Shopit.Application.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using OfficeOpenXml;
 using Shopit.Application.Products.DTOs;
@@ -250,13 +253,40 @@ public class ProductServiceTests
         error.Reason.Should().Contain("Price must be a valid number greater than 0.");
     }
 
-    private static ProductService CreateService(AppDbContext context)
-    {
-        return new ProductService(
-            context,
-            new CreateProductRequestValidator(),
-            new UpdateProductRequestValidator());
-    }
+       private static ProductService CreateService(AppDbContext context)
+{
+    var cacheMock = new Mock<ICacheService>();
+    
+    cacheMock
+        .Setup(c => c.GetAsync<PaginatedResult<ProductResponse>>(It.IsAny<string>()))
+        .ReturnsAsync((PaginatedResult<ProductResponse>?)null);
+    
+    cacheMock
+        .Setup(c => c.GetAsync<ProductResponse>(It.IsAny<string>()))
+        .ReturnsAsync((ProductResponse?)null);
+    
+    cacheMock
+        .Setup(c => c.SetAsync(It.IsAny<string>(), It.IsAny<PaginatedResult<ProductResponse>>(), It.IsAny<TimeSpan>()))
+        .Returns(Task.CompletedTask);
+    
+    cacheMock
+        .Setup(c => c.SetAsync(It.IsAny<string>(), It.IsAny<ProductResponse>(), It.IsAny<TimeSpan>()))
+        .Returns(Task.CompletedTask);
+    
+    cacheMock
+        .Setup(c => c.RemoveAsync(It.IsAny<string>()))
+        .Returns(Task.CompletedTask);
+    
+    cacheMock
+        .Setup(c => c.RemoveByPatternAsync(It.IsAny<string>()))
+        .Returns(Task.CompletedTask);
+
+    return new ProductService(
+        context,
+        new CreateProductRequestValidator(),
+        new UpdateProductRequestValidator(),
+        cacheMock.Object);
+}
 
     private static AppDbContext CreateContext()
     {

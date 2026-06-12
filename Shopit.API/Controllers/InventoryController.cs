@@ -1,3 +1,4 @@
+using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Shopit.Application.DTOs;
@@ -6,7 +7,8 @@ using Shopit.Application.Interfaces;
 namespace Shopit.API.Controllers;
 
 [ApiController]
-[Route("api/v1/inventory")]
+[ApiVersion("1.0")]
+[Route("api/v{version:apiVersion}/inventory")]
 [Authorize(Roles = "Admin")]
 public class InventoryController : ControllerBase
 {

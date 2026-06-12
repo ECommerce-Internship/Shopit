@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text;
 using Asp.Versioning;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -6,17 +7,32 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using OfficeOpenXml;
+using Serilog;
+using Serilog.Events;
 using Shopit.API.Middleware;
 using Shopit.Application.Interfaces;
 using Shopit.Application.Validators;
 using Shopit.Infrastructure.Data;
+using Shopit.Infrastructure.Repositories;
 using Shopit.Infrastructure.Services;
-using System.Reflection;
-using System.Text;
+using StackExchange.Redis;
+using Shopit.Application.Products;
+
+ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
 
 var builder = WebApplication.CreateBuilder(args);
 
-ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+// Serilog configured AFTER builder so it can read from configuration
+builder.Host.UseSerilog((context, config) =>
+{
+    config
+        .MinimumLevel.Information()
+        .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+        .Enrich.FromLogContext()
+        .Enrich.WithMachineName()
+        .WriteTo.Console()
+        .WriteTo.Seq(context.Configuration["Seq:ServerUrl"]!);
+});
 
 const string DevelopmentCorsPolicy = "DevelopmentCorsPolicy";
 
@@ -97,13 +113,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
-builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
-
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(DevelopmentCorsPolicy, policy =>
@@ -117,9 +126,16 @@ builder.Services.AddCors(options =>
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-builder.Services.AddValidatorsFromAssembly(typeof(IProductService).Assembly);
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+    ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));
 
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IProductService, ProductService>();
+
+builder.Services.AddValidatorsFromAssembly(typeof(RegisterRequestValidator).Assembly);
+builder.Services.AddValidatorsFromAssembly(typeof(IProductService).Assembly);
 
 var app = builder.Build();
 
@@ -132,7 +148,20 @@ if (app.Environment.IsDevelopment())
         options.RoutePrefix = "swagger";
     });
     app.UseCors(DevelopmentCorsPolicy);
+
+    using var scope = app.Services.CreateScope();
+    var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    DbInitializer.Seed(context);
 }
+
+app.UseSerilogRequestLogging(options =>
+{
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+    {
+        diagnosticContext.Set("ClientIp", httpContext.Connection.RemoteIpAddress?.ToString());
+        diagnosticContext.Set("UserId", httpContext.User?.FindFirst("sub")?.Value ?? "anonymous");
+    };
+});
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseHttpsRedirection();

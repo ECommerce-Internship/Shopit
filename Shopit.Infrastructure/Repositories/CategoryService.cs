@@ -18,15 +18,16 @@ public class CategoryService : ICategoryService
     }
 
     public async Task<List<CategoryResponse>> GetAllAsync()
-    {
-        var categories = await _context.Categories
-            .Include(c => c.SubCategories)
-            .ToListAsync();
+{
+    var categories = await _context.Categories
+        .Include(c => c.SubCategories)
+        .Where(c => c.ParentCategoryId == null)
+        .ToListAsync();
 
-        Log.Information("Retrieved {Count} categories", categories.Count);
+    Log.Information("Retrieved {Count} root categories", categories.Count);
 
-        return categories.Select(MapToResponse).ToList();
-    }
+    return categories.Select(MapToResponse).ToList();
+}
 
     public async Task<CategoryResponse> GetByIdAsync(int id)
     {
@@ -53,7 +54,14 @@ public class CategoryService : ICategoryService
             Log.Warning("Duplicate category name attempted: {Name}", request.Name);
             throw new ConflictException($"A category with the name '{request.Name}' already exists.");
         }
+        if (request.ParentCategoryId.HasValue)
+        {
+            var parentExists = await _context.Categories
+                .AnyAsync(c => c.Id == request.ParentCategoryId.Value);
 
+            if (!parentExists)
+                throw new NotFoundException($"Parent category with ID {request.ParentCategoryId.Value} was not found.");
+        }
         var category = new Category
         {
             Name = request.Name,
@@ -77,16 +85,33 @@ public class CategoryService : ICategoryService
 
         if (category is null)
             throw new NotFoundException($"Category with ID {id} was not found.");
+        // Duplicate name check — same as CreateAsync
+    var nameExists = await _context.Categories
+        .AnyAsync(c => c.Name.ToLower() == request.Name.ToLower() && c.Id != id);
+        if (request.ParentCategoryId.HasValue)
+        {
+            var parentExists = await _context.Categories
+        .   AnyAsync(c => c.Id == request.ParentCategoryId.Value);
 
-        category.Name = request.Name;
-        category.Slug = request.Name.ToLower().Replace(" ", "-");
-        category.ParentCategoryId = request.ParentCategoryId;
+        if (!parentExists)
+            throw new NotFoundException($"Parent category with ID {request.ParentCategoryId.Value} was not found.");
+        }
 
-        await _context.SaveChangesAsync();
+    if (nameExists)
+        throw new ConflictException($"A category with the name '{request.Name}' already exists.");
+     // Guard against self-referencing parent
+    if (request.ParentCategoryId.HasValue && request.ParentCategoryId.Value == id)
+        throw new ConflictException("A category cannot be its own parent.");
 
-        Log.Information("Category updated: {CategoryId}", id);
+    category.Name = request.Name;
+    category.Slug = request.Name.ToLower().Replace(" ", "-");
+    category.ParentCategoryId = request.ParentCategoryId;
 
-        return MapToResponse(category);
+    await _context.SaveChangesAsync();
+
+    Log.Information("Category updated: {CategoryId}", id);
+
+    return MapToResponse(category);
     }
 
     public async Task DeleteAsync(int id)

@@ -27,6 +27,5 @@
   <ItemGroup>
     <ProjectReference Include="..\Shopit.Application\Shopit.Application.csproj" />
     <ProjectReference Include="..\Shopit.Infrastructure\Shopit.Infrastructure.csproj" />
-    <ProjectReference Include="..\Shopit.Application\Shopit.Application.csproj" />
   </ItemGroup>
 </Project>

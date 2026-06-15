@@ -122,9 +122,9 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
-builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
-
+builder.Services.AddScoped<ICacheService, CacheService>();
+builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddValidatorsFromAssembly(typeof(RegisterRequestValidator).Assembly);
 builder.Services.AddValidatorsFromAssembly(typeof(CreateCategoryRequestValidator).Assembly);
 builder.Services.AddValidatorsFromAssembly(typeof(IProductService).Assembly);

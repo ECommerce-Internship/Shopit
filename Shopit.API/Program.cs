@@ -104,6 +104,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<ILowStockAlertService, LowStockAlertServiceStub>();
+builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 builder.Services.AddCors(options =>
@@ -120,9 +121,9 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));
 
 builder.Services.AddScoped<ICategoryService, CategoryService>();
-builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
-
+builder.Services.AddScoped<ICacheService, CacheService>();
+builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddValidatorsFromAssembly(typeof(RegisterRequestValidator).Assembly);
 builder.Services.AddValidatorsFromAssembly(typeof(CreateCategoryRequestValidator).Assembly);
 builder.Services.AddValidatorsFromAssembly(typeof(IProductService).Assembly);

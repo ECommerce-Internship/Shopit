@@ -45,6 +45,17 @@ public static class DbInitializer
         };
 
         context.Users.Add(admin);
+
+        var coupon = new Coupon
+        {
+            Code = "SAVE10",
+            DiscountType = CouponDiscountType.Percent,
+            DiscountValue = 10,
+            IsActive = true,
+            ExpiresAt = DateTime.UtcNow.AddYears(1)
+        };
+
+        context.Coupons.Add(coupon);
         context.SaveChanges();
     }
 }

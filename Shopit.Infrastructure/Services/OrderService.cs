@@ -21,7 +21,6 @@ public class OrderService : IOrderService
 
     public async Task<OrderResponse> PlaceOrderAsync(int userId, PlaceOrderRequest request)
     {
-        // 1. Fetch cart
         var cart = await _context.Carts
             .Include(c => c.CartItems)
                 .ThenInclude(ci => ci.Product)
@@ -32,7 +31,6 @@ public class OrderService : IOrderService
         if (cart == null || !cart.CartItems.Any())
             throw new ValidationException("Cart is empty.");
 
-        // 2. Check stock for ALL items upfront
         var outOfStockItems = cart.CartItems
             .Where(ci => ci.Product.Inventory == null || ci.Product.Inventory.Quantity < ci.Quantity)
             .Select(ci => ci.Product.Name)
@@ -41,7 +39,6 @@ public class OrderService : IOrderService
         if (outOfStockItems.Any())
             throw new ValidationException($"Insufficient stock for: {string.Join(", ", outOfStockItems)}.");
 
-        // 3. Compute totals
         var subtotal = cart.CartItems.Sum(ci => ci.Product.Price * ci.Quantity);
         decimal discountAmount = 0;
 
@@ -56,12 +53,10 @@ public class OrderService : IOrderService
         var totalAmount = subtotal - discountAmount;
         if (totalAmount < 0) totalAmount = 0;
 
-        // 4. Begin transaction
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
         try
         {
-            // 5. Create Order
             var order = new Order
             {
                 UserId = userId,
@@ -76,7 +71,6 @@ public class OrderService : IOrderService
             _context.Orders.Add(order);
             await _context.SaveChangesAsync();
 
-            // 6. Create OrderItems and deduct inventory
             foreach (var cartItem in cart.CartItems)
             {
                 var orderItem = new OrderItem
@@ -90,24 +84,18 @@ public class OrderService : IOrderService
                 };
 
                 _context.OrderItems.Add(orderItem);
-
-                // Deduct inventory
                 cartItem.Product.Inventory!.Quantity -= cartItem.Quantity;
             }
 
-            // 7. Clear cart
             _context.CartItems.RemoveRange(cart.CartItems);
             cart.CouponId = null;
 
-            // 8. SaveChanges and commit
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
-            // 9. Fire and forget confirmation email
             var userEmail = (await _context.Users.FindAsync(userId))!.Email;
             _ = Task.Run(() => _emailService.SendOrderConfirmationAsync(order.Id, userEmail));
 
-            // Return response
             var orderWithItems = await _context.Orders
                 .Include(o => o.OrderItems)
                     .ThenInclude(oi => oi.Product)
@@ -121,6 +109,143 @@ public class OrderService : IOrderService
             throw;
         }
     }
+
+    public async Task<PaginatedResponse<OrderSummaryResponse>> GetMyOrdersAsync(int userId, int page, int pageSize)
+    {
+        var query = _context.Orders
+            .Include(o => o.OrderItems)
+            .Include(o => o.Payment)
+            .Where(o => o.UserId == userId)
+            .OrderByDescending(o => o.CreatedAt);
+
+        var totalCount = await query.CountAsync();
+
+        var orders = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return new PaginatedResponse<OrderSummaryResponse>
+        {
+            Items = orders.Select(MapToSummary).ToList(),
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        };
+    }
+
+    public async Task<OrderResponse> GetOrderByIdAsync(int orderId, int userId, bool isAdmin)
+    {
+        var order = await _context.Orders
+            .Include(o => o.OrderItems)
+                .ThenInclude(oi => oi.Product)
+            .Include(o => o.Payment)
+            .FirstOrDefaultAsync(o => o.Id == orderId);
+
+        if (order == null)
+            throw new NotFoundException($"Order with ID {orderId} was not found.");
+
+        if (!isAdmin && order.UserId != userId)
+            throw new ForbiddenException("You do not have access to this order.");
+
+        return MapToResponse(order);
+    }
+
+    public async Task<OrderResponse> CancelOrderAsync(int orderId, int userId)
+    {
+        var order = await _context.Orders
+            .Include(o => o.OrderItems)
+                .ThenInclude(oi => oi.Product)
+            .FirstOrDefaultAsync(o => o.Id == orderId && o.UserId == userId);
+
+        if (order == null)
+            throw new NotFoundException($"Order with ID {orderId} was not found.");
+
+        if (order.Status != OrderStatus.Pending)
+            throw new ValidationException($"Order cannot be cancelled because it is already {order.Status}.");
+
+        order.Status = OrderStatus.Cancelled;
+        await _context.SaveChangesAsync();
+
+        return MapToResponse(order);
+    }
+
+    public async Task<PaginatedResponse<OrderSummaryResponse>> GetAllOrdersAsync(int page, int pageSize, string? status, DateTime? from, DateTime? to)
+    {
+        var query = _context.Orders
+            .Include(o => o.OrderItems)
+            .Include(o => o.Payment)
+            .AsQueryable();
+
+        if (!string.IsNullOrEmpty(status) && Enum.TryParse<OrderStatus>(status, true, out var parsedStatus))
+            query = query.Where(o => o.Status == parsedStatus);
+
+        if (from.HasValue)
+            query = query.Where(o => o.CreatedAt >= from.Value);
+
+        if (to.HasValue)
+            query = query.Where(o => o.CreatedAt <= to.Value);
+
+        query = query.OrderByDescending(o => o.CreatedAt);
+
+        var totalCount = await query.CountAsync();
+
+        var orders = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return new PaginatedResponse<OrderSummaryResponse>
+        {
+            Items = orders.Select(MapToSummary).ToList(),
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        };
+    }
+
+    public async Task<OrderResponse> UpdateOrderStatusAsync(int orderId, UpdateOrderStatusRequest request)
+    {
+        var order = await _context.Orders
+            .Include(o => o.OrderItems)
+                .ThenInclude(oi => oi.Product)
+            .FirstOrDefaultAsync(o => o.Id == orderId);
+
+        if (order == null)
+            throw new NotFoundException($"Order with ID {orderId} was not found.");
+
+        if (!Enum.TryParse<OrderStatus>(request.Status, true, out var newStatus))
+            throw new ValidationException($"Invalid order status: {request.Status}.");
+
+        var validProgressions = new Dictionary<OrderStatus, List<OrderStatus>>
+        {
+            { OrderStatus.Pending, new List<OrderStatus> { OrderStatus.Processing, OrderStatus.Cancelled } },
+            { OrderStatus.Processing, new List<OrderStatus> { OrderStatus.Shipped } },
+            { OrderStatus.Shipped, new List<OrderStatus> { OrderStatus.Delivered } },
+            { OrderStatus.Delivered, new List<OrderStatus>() },
+            { OrderStatus.Cancelled, new List<OrderStatus>() }
+        };
+
+        if (!validProgressions[order.Status].Contains(newStatus))
+            throw new ValidationException($"Cannot transition order from {order.Status} to {newStatus}.");
+
+        order.Status = newStatus;
+        await _context.SaveChangesAsync();
+
+        return MapToResponse(order);
+    }
+
+    private static OrderSummaryResponse MapToSummary(Order order) => new()
+    {
+        Id = order.Id,
+        Status = order.Status.ToString(),
+        TotalAmount = order.TotalAmount,
+        DiscountAmount = order.DiscountAmount,
+        ShippingAddress = order.ShippingAddress,
+        CreatedAt = order.CreatedAt,
+        ItemCount = order.OrderItems.Count,
+        PaymentStatus = order.Payment?.Status.ToString()
+    };
 
     private static OrderResponse MapToResponse(Order order) => new()
     {

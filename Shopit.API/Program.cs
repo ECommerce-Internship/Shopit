@@ -115,6 +115,22 @@ builder.Services.AddCors(options =>
     });
 });
 
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+    ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));
+
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
+
+builder.Services.AddValidatorsFromAssembly(typeof(RegisterRequestValidator).Assembly);
+builder.Services.AddValidatorsFromAssembly(typeof(CreateCategoryRequestValidator).Assembly);
+builder.Services.AddValidatorsFromAssembly(typeof(IProductService).Assembly);
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())

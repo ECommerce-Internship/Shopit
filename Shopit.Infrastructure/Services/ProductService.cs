@@ -11,7 +11,7 @@ using Shopit.Infrastructure.Data;
 using DomainValidationException = Shopit.Domain.Exceptions.ValidationException;
 using Shopit.Application.Interfaces;
 namespace Shopit.Infrastructure.Services;
-
+using Serilog;
 public class ProductService : IProductService
 {
     private readonly AppDbContext _context;
@@ -36,13 +36,23 @@ public class ProductService : IProductService
 
         var pageNumber = queryParameters.PageNumber <= 0 ? 1 : queryParameters.PageNumber;
         var pageSize = queryParameters.PageSize <= 0 ? 10 : queryParameters.PageSize;
-        // Generate cache key from query parameters
-         var cacheKey = $"products:{System.Text.Json.JsonSerializer.Serialize(queryParameters)}";
+         // Build cache key from NORMALIZED/CLAMPED values
+        var cacheKey = $"products:p{pageNumber}:s{pageSize}:search{queryParameters.Search?.Trim().ToLower()}:cat{queryParameters.CategoryId}:min{queryParameters.MinPrice}:max{queryParameters.MaxPrice}:sort{queryParameters.SortBy}:{queryParameters.SortDirection}";
 
-        // Check cache first
-        var cached = await _cache.GetAsync<PaginatedResult<ProductResponse>>(cacheKey);
+        // Cache read with fallback — Redis down should not break product reads
+        PaginatedResult<ProductResponse>? cached = null;
+        try
+        {
+            cached = await _cache.GetAsync<PaginatedResult<ProductResponse>>(cacheKey);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Cache read failed for key {CacheKey} — falling back to DB", cacheKey);
+        }
+
         if (cached is not null)
             return cached;
+       
         if (pageSize > 100)
             pageSize = 100;
 
@@ -116,30 +126,55 @@ public class ProductService : IProductService
             totalCount,
             pageNumber,
             pageSize);
-        await _cache.SetAsync(cacheKey, result, TimeSpan.FromMinutes(5));
+        try
+        {
+            await _cache.SetAsync(cacheKey, result, TimeSpan.FromMinutes(5));
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Cache write failed for key {CacheKey} — continuing without cache", cacheKey);
+        }
+
         return result;
     }
 
-    public async Task<ProductResponse> GetByIdAsync(int id)
+   public async Task<ProductResponse> GetByIdAsync(int id)
+{
+    var cacheKey = $"product:{id}";
+
+    ProductResponse? cached = null;
+    try
     {
-        var cacheKey = $"product:{id}";
-
-        var cached = await _cache.GetAsync<ProductResponse>(cacheKey);
-        if (cached is not null)
-            return cached;
-        var product = await ProjectToResponse(
-                _context.Products
-                    .AsNoTracking()
-                    .Where(p => p.Id == id && !p.IsDeleted))
-            .FirstOrDefaultAsync();
-
-        if (product is null)
-        {
-            throw new NotFoundException($"Product with id {id} was not found.");
-        }
-        await _cache.SetAsync(cacheKey, product, TimeSpan.FromMinutes(5));
-        return product;
+        cached = await _cache.GetAsync<ProductResponse>(cacheKey);
     }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Cache read failed for key {CacheKey} — falling back to DB", cacheKey);
+    }
+
+    if (cached is not null)
+        return cached;
+
+    var product = await ProjectToResponse(
+            _context.Products
+                .AsNoTracking()
+                .Where(p => p.Id == id && !p.IsDeleted))
+        .FirstOrDefaultAsync();
+
+    if (product is null)
+        throw new NotFoundException($"Product with id {id} was not found.");
+
+    try
+    {
+        await _cache.SetAsync(cacheKey, product, TimeSpan.FromMinutes(5));
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Cache write failed for key {CacheKey} — continuing without cache", cacheKey);
+    }
+
+    return product;
+}
 
     public async Task<ProductResponse> CreateAsync(CreateProductRequest request)
     {

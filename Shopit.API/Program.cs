@@ -9,6 +9,7 @@ using Shopit.Application.Interfaces;
 using Shopit.Application.Validators;
 using Shopit.Infrastructure.Data;
 using Shopit.Infrastructure.Services;
+using StackExchange.Redis;
 using System.Reflection;
 using System.Text;
 
@@ -96,6 +97,11 @@ builder.Services.AddAuthorization();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// Redis
+var redisConnection = builder.Configuration.GetConnectionString("Redis")!;
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    ConnectionMultiplexer.Connect(redisConnection));
+
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
@@ -103,6 +109,7 @@ builder.Services.AddScoped<ILowStockAlertService, LowStockAlertServiceStub>();
 builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IEmailService, EmailServiceStub>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 builder.Services.AddCors(options =>

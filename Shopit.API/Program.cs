@@ -101,6 +101,8 @@ builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<ILowStockAlertService, LowStockAlertServiceStub>();
 builder.Services.AddScoped<ICartService, CartService>();
+builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<IEmailService, EmailServiceStub>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 builder.Services.AddCors(options =>

@@ -1,6 +1,7 @@
 using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Shopit.Application.AI;
 using Shopit.Application.Common;
 using Shopit.Application.Products;
 using Shopit.Application.Products.DTOs;
@@ -134,5 +135,24 @@ public async Task<ActionResult<ImportResultDto>> Import(
         await _productService.DeleteAsync(id);
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// Generates and persists AI content (description, SEO title, meta description, features) for a product.
+    /// </summary>
+    [HttpPost("{id:int}/generate-content")]
+    [ProducesResponseType(typeof(ProductResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<ProductResponse>> GenerateContent(
+        int id,
+        [FromBody] ApplyProductContentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _productService.ApplyGeneratedContentAsync(id, request.Specs, cancellationToken);
+
+        return Ok(result);
     }
 }

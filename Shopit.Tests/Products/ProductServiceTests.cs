@@ -1,6 +1,8 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Moq;
 using OfficeOpenXml;
+using Shopit.Application.AI;
 using Shopit.Application.Products.DTOs;
 using Shopit.Application.Products.Validators;
 using Shopit.Domain.Entities;
@@ -255,7 +257,8 @@ public class ProductServiceTests
         return new ProductService(
             context,
             new CreateProductRequestValidator(),
-            new UpdateProductRequestValidator());
+            new UpdateProductRequestValidator(),
+            new Mock<IGeminiService>().Object);
     }
 
     private static AppDbContext CreateContext()

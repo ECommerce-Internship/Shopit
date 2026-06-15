@@ -2,6 +2,7 @@ using System.Globalization;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using OfficeOpenXml;
+using Shopit.Application.AI;
 using Shopit.Application.Common;
 using Shopit.Application.Products;
 using Shopit.Application.Products.DTOs;
@@ -17,15 +18,18 @@ public class ProductService : IProductService
     private readonly AppDbContext _context;
     private readonly IValidator<CreateProductRequest> _createValidator;
     private readonly IValidator<UpdateProductRequest> _updateValidator;
+    private readonly IGeminiService _geminiService;
 
     public ProductService(
         AppDbContext context,
         IValidator<CreateProductRequest> createValidator,
-        IValidator<UpdateProductRequest> updateValidator)
+        IValidator<UpdateProductRequest> updateValidator,
+        IGeminiService geminiService)
     {
         _context = context;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
+        _geminiService = geminiService;
     }
 
     public async Task<PaginatedResult<ProductResponse>> GetAllAsync(ProductQueryParameters queryParameters)
@@ -416,6 +420,40 @@ public class ProductService : IProductService
     return result;
 }
 
+    public async Task<ProductResponse> ApplyGeneratedContentAsync(
+        int productId,
+        string specs,
+        CancellationToken cancellationToken = default)
+    {
+        var product = await _context.Products
+            .Include(p => p.Category)
+            .ThenInclude(c => c.ParentCategory)
+            .FirstOrDefaultAsync(p => p.Id == productId && !p.IsDeleted, cancellationToken);
+
+        if (product is null)
+            throw new NotFoundException($"Product with id {productId} was not found.");
+
+        var categoryString = product.Category.ParentCategory != null
+            ? $"{product.Category.ParentCategory.Name} > {product.Category.Name}"
+            : product.Category.Name;
+
+        var result = await _geminiService.GenerateProductContentAsync(
+            product.Name,
+            categoryString,
+            specs,
+            product.Price,
+            cancellationToken);
+
+        product.Description = result.Description;
+        product.SeoTitle = result.SeoTitle;
+        product.MetaDescription = result.MetaDescription;
+        product.Features = result.Features;
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return await GetByIdAsync(productId);
+    }
+
     private static IQueryable<ProductResponse> ProjectToResponse(IQueryable<Product> query)
     {
         return query.Select(p => new ProductResponse
@@ -433,7 +471,10 @@ public class ProductService : IProductService
                 ? p.Reviews.Average(r => r.Rating)
                 : 0,
             ReviewCount = p.Reviews.Count(),
-            CreatedAt = p.CreatedAt
+            CreatedAt = p.CreatedAt,
+            SeoTitle = p.SeoTitle,
+            MetaDescription = p.MetaDescription,
+            Features = p.Features
         });
     }
 

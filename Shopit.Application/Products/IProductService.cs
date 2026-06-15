@@ -16,4 +16,6 @@ public interface IProductService
     Task DeleteAsync(int id);
 
     Task<ImportResultDto> ImportAsync(Stream fileStream, CancellationToken cancellationToken = default);
+
+    Task<ProductResponse> ApplyGeneratedContentAsync(int productId, string specs, CancellationToken cancellationToken = default);
 }

@@ -25,4 +25,8 @@ public class ProductResponse
     public int ReviewCount { get; set; }
 
     public DateTime CreatedAt { get; set; }
+
+    public string? SeoTitle { get; set; }
+    public string? MetaDescription { get; set; }
+    public List<string>? Features { get; set; }
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Shopit.Domain.Entities;
 
@@ -112,6 +113,20 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<Review>()
             .HasIndex(r => new { r.UserId, r.ProductId }).IsUnique();
+
+        // SEO fields
+        modelBuilder.Entity<Product>()
+            .Property(p => p.SeoTitle).HasMaxLength(60);
+
+        modelBuilder.Entity<Product>()
+            .Property(p => p.MetaDescription).HasMaxLength(155);
+
+        modelBuilder.Entity<Product>()
+            .Property(p => p.Features)
+            .HasColumnType("nvarchar(max)")
+            .HasConversion(
+                v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                v => v == null ? null : JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null));
 
         // Decimal precision
         modelBuilder.Entity<Product>()

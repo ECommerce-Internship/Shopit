@@ -11,6 +11,10 @@ using Shopit.Infrastructure.Data;
 using Shopit.Infrastructure.Services;
 using System.Reflection;
 using System.Text;
+using Shopit.Application.AI;
+using StackExchange.Redis;
+using Shopit.Application.Products;
+using Shopit.Infrastructure.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -112,14 +116,9 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));
 
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
@@ -127,6 +126,13 @@ builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddValidatorsFromAssembly(typeof(RegisterRequestValidator).Assembly);
 builder.Services.AddValidatorsFromAssembly(typeof(CreateCategoryRequestValidator).Assembly);
 builder.Services.AddValidatorsFromAssembly(typeof(IProductService).Assembly);
+builder.Services.AddHttpClient("GeminiClient", client =>
+{
+    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+builder.Services.AddScoped<IGeminiService, GeminiService>();
 
 var app = builder.Build();
 
@@ -147,9 +153,12 @@ if (app.Environment.IsDevelopment())
     });
     app.UseCors(DevelopmentCorsPolicy);
 }
+else
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
-app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

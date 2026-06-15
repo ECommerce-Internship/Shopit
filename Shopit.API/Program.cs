@@ -100,6 +100,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<ILowStockAlertService, LowStockAlertServiceStub>();
+builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 builder.Services.AddCors(options =>

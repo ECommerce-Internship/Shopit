@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Shopit.Application.DTOs;
 using Shopit.Domain.Entities;
 using Shopit.Domain.Enums;
@@ -16,6 +17,7 @@ public class CartServiceTests
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         return new AppDbContext(options);
     }
@@ -32,7 +34,7 @@ public class CartServiceTests
             SKU = "TEST-001",
             Price = 99.99m,
             CategoryId = category.Id,
-            Inventory = new Inventory { Quantity = stock, LowStockThreshold = 2 }
+            Inventory = new Inventory { Quantity = stock, LowStockThreshold = 2, RowVersion = new byte[8] }
         };
         db.Products.Add(product);
 

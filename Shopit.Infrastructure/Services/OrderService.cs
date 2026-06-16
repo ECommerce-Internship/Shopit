@@ -47,6 +47,9 @@ public class OrderService : IOrderService
 
         if (cart.Coupon != null)
         {
+            if (cart.Coupon.UsageLimit.HasValue && cart.Coupon.UsageCount >= cart.Coupon.UsageLimit.Value)
+                throw new ValidationException($"Coupon '{cart.Coupon.Code}' has reached its usage limit.");
+
             if (cart.Coupon.DiscountType == CouponDiscountType.Percent)
                 discountAmount = subtotal * (cart.Coupon.DiscountValue / 100);
             else
@@ -89,6 +92,9 @@ public class OrderService : IOrderService
                 _context.OrderItems.Add(orderItem);
                 cartItem.Product.Inventory!.Quantity -= cartItem.Quantity;
             }
+
+            if (cart.Coupon != null)
+                cart.Coupon.UsageCount += 1;
 
             _context.CartItems.RemoveRange(cart.CartItems);
             cart.CouponId = null;

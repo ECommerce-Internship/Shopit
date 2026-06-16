@@ -67,6 +67,10 @@ public class AppDbContext : DbContext
             .WithOne(p => p.Inventory)
             .HasForeignKey<Inventory>(i => i.ProductId);
 
+        modelBuilder.Entity<Inventory>()
+            .Property(i => i.RowVersion)
+            .IsRowVersion();
+
         // Cart -> CartItems (one-to-many)
         modelBuilder.Entity<CartItem>()
             .HasOne(ci => ci.Cart)
@@ -131,6 +135,7 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<Payment>()
             .Property(p => p.Amount).HasPrecision(10, 2);
+
         modelBuilder.Entity<Coupon>()
             .Property(c => c.MinimumOrderAmount).HasPrecision(10, 2);
 

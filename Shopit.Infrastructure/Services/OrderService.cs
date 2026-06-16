@@ -93,7 +93,16 @@ public class OrderService : IOrderService
             _context.CartItems.RemoveRange(cart.CartItems);
             cart.CouponId = null;
 
-            await _context.SaveChangesAsync();
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await transaction.RollbackAsync();
+                throw new ValidationException("One or more items in your order are no longer available in the requested quantity. Please review your cart and try again.");
+            }
+
             await transaction.CommitAsync();
 
             var userEmail = (await _context.Users.FindAsync(userId))!.Email;

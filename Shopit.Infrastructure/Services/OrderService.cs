@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Shopit.Application.DTOs;
 using Shopit.Application.Interfaces;
@@ -12,11 +13,13 @@ public class OrderService : IOrderService
 {
     private readonly AppDbContext _context;
     private readonly IEmailService _emailService;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
 
-    public OrderService(AppDbContext context, IEmailService emailService)
+    public OrderService(AppDbContext context, IEmailService emailService, IServiceScopeFactory serviceScopeFactory)
     {
         _context = context;
         _emailService = emailService;
+        _serviceScopeFactory = serviceScopeFactory;
     }
 
     public async Task<OrderResponse> PlaceOrderAsync(int userId, PlaceOrderRequest request)
@@ -94,7 +97,14 @@ public class OrderService : IOrderService
             await transaction.CommitAsync();
 
             var userEmail = (await _context.Users.FindAsync(userId))!.Email;
-            _ = Task.Run(() => _emailService.SendOrderConfirmationAsync(order.Id, userEmail));
+            var orderId = order.Id;
+
+            _ = Task.Run(async () =>
+            {
+                using var scope = _serviceScopeFactory.CreateScope();
+                var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+                await emailService.SendOrderConfirmationAsync(orderId, userEmail);
+            });
 
             var orderWithItems = await _context.Orders
                 .Include(o => o.OrderItems)
@@ -112,6 +122,10 @@ public class OrderService : IOrderService
 
     public async Task<PaginatedResponse<OrderSummaryResponse>> GetMyOrdersAsync(int userId, int page, int pageSize)
     {
+        if (page < 1) page = 1;
+        if (pageSize < 1) pageSize = 1;
+        if (pageSize > 100) pageSize = 100;
+
         var query = _context.Orders
             .Include(o => o.OrderItems)
             .Include(o => o.Payment)
@@ -156,6 +170,7 @@ public class OrderService : IOrderService
         var order = await _context.Orders
             .Include(o => o.OrderItems)
                 .ThenInclude(oi => oi.Product)
+                    .ThenInclude(p => p.Inventory)
             .FirstOrDefaultAsync(o => o.Id == orderId && o.UserId == userId);
 
         if (order == null)
@@ -165,6 +180,13 @@ public class OrderService : IOrderService
             throw new ValidationException($"Order cannot be cancelled because it is already {order.Status}.");
 
         order.Status = OrderStatus.Cancelled;
+
+        foreach (var item in order.OrderItems)
+        {
+            if (item.Product?.Inventory != null)
+                item.Product.Inventory.Quantity += item.Quantity;
+        }
+
         await _context.SaveChangesAsync();
 
         return MapToResponse(order);
@@ -172,6 +194,10 @@ public class OrderService : IOrderService
 
     public async Task<PaginatedResponse<OrderSummaryResponse>> GetAllOrdersAsync(int page, int pageSize, string? status, DateTime? from, DateTime? to)
     {
+        if (page < 1) page = 1;
+        if (pageSize < 1) pageSize = 1;
+        if (pageSize > 100) pageSize = 100;
+
         var query = _context.Orders
             .Include(o => o.OrderItems)
             .Include(o => o.Payment)
@@ -209,6 +235,7 @@ public class OrderService : IOrderService
         var order = await _context.Orders
             .Include(o => o.OrderItems)
                 .ThenInclude(oi => oi.Product)
+                    .ThenInclude(p => p.Inventory)
             .FirstOrDefaultAsync(o => o.Id == orderId);
 
         if (order == null)
@@ -228,6 +255,15 @@ public class OrderService : IOrderService
 
         if (!validProgressions[order.Status].Contains(newStatus))
             throw new ValidationException($"Cannot transition order from {order.Status} to {newStatus}.");
+
+        if (newStatus == OrderStatus.Cancelled)
+        {
+            foreach (var item in order.OrderItems)
+            {
+                if (item.Product?.Inventory != null)
+                    item.Product.Inventory.Quantity += item.Quantity;
+            }
+        }
 
         order.Status = newStatus;
         await _context.SaveChangesAsync();

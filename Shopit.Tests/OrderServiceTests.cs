@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Shopit.Application.DTOs;
 using Shopit.Application.Interfaces;
@@ -30,6 +31,19 @@ public class OrderServiceTests
         mock.Setup(e => e.SendOrderConfirmationAsync(It.IsAny<int>(), It.IsAny<string>()))
             .Returns(Task.CompletedTask);
         return mock.Object;
+    }
+
+    private IServiceScopeFactory CreateScopeFactoryStub(IEmailService emailService)
+    {
+        var scopeMock = new Mock<IServiceScope>();
+        var providerMock = new Mock<IServiceProvider>();
+        providerMock.Setup(p => p.GetService(typeof(IEmailService))).Returns(emailService);
+        scopeMock.Setup(s => s.ServiceProvider).Returns(providerMock.Object);
+
+        var factoryMock = new Mock<IServiceScopeFactory>();
+        factoryMock.Setup(f => f.CreateScope()).Returns(scopeMock.Object);
+
+        return factoryMock.Object;
     }
 
     private async Task<(AppDbContext db, User user, Product product1, Product product2)> SeedData(AppDbContext db)
@@ -104,7 +118,8 @@ public class OrderServiceTests
             (product2.Id, 1)
         });
 
-        var service = new OrderService(db, CreateEmailServiceStub());
+        var emailService = CreateEmailServiceStub();
+        var service = new OrderService(db, emailService, CreateScopeFactoryStub(emailService));
 
         var result = await service.PlaceOrderAsync(user.Id, new PlaceOrderRequest
         {
@@ -132,7 +147,8 @@ public class OrderServiceTests
         var db = CreateDb();
         var (_, user, _, _) = await SeedData(db);
 
-        var service = new OrderService(db, CreateEmailServiceStub());
+        var emailService = CreateEmailServiceStub();
+        var service = new OrderService(db, emailService, CreateScopeFactoryStub(emailService));
 
         var act = async () => await service.PlaceOrderAsync(user.Id, new PlaceOrderRequest
         {
@@ -154,7 +170,8 @@ public class OrderServiceTests
             (product1.Id, 100)
         });
 
-        var service = new OrderService(db, CreateEmailServiceStub());
+        var emailService = CreateEmailServiceStub();
+        var service = new OrderService(db, emailService, CreateScopeFactoryStub(emailService));
 
         var act = async () => await service.PlaceOrderAsync(user.Id, new PlaceOrderRequest
         {
@@ -176,7 +193,8 @@ public class OrderServiceTests
             (product1.Id, 1)
         });
 
-        var service = new OrderService(db, CreateEmailServiceStub());
+        var emailService = CreateEmailServiceStub();
+        var service = new OrderService(db, emailService, CreateScopeFactoryStub(emailService));
 
         var order = await service.PlaceOrderAsync(user.Id, new PlaceOrderRequest
         {
@@ -205,7 +223,8 @@ public class OrderServiceTests
         db.Orders.Add(order);
         await db.SaveChangesAsync();
 
-        var service = new OrderService(db, CreateEmailServiceStub());
+        var emailService = CreateEmailServiceStub();
+        var service = new OrderService(db, emailService, CreateScopeFactoryStub(emailService));
 
         var act = async () => await service.CancelOrderAsync(order.Id, user.Id);
 

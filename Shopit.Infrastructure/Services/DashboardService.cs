@@ -69,24 +69,27 @@ public class DashboardService : IDashboardService
         if (cached.HasValue)
             return JsonSerializer.Deserialize<IEnumerable<RevenueByPeriodResponse>>(cached.ToString())!;
 
-        var paidPayments = _context.Payments
+        var paidPayments = await _context.Payments
             .Where(p => p.Status == PaymentStatus.Paid)
             .Join(_context.Orders,
                   p => p.OrderId,
                   o => o.Id,
-                  (p, o) => new { p.Amount, o.CreatedAt });
+                  (p, o) => new { p.Amount, o.CreatedAt })
+            .ToListAsync();
 
         List<RevenueByPeriodResponse> result;
 
         if (period == "week")
         {
-            var raw = await paidPayments.ToListAsync();
-            result = raw
-                .GroupBy(x => System.Globalization.ISOWeek.GetWeekOfYear(x.CreatedAt))
-                .OrderBy(g => g.Key)
+            result = paidPayments
+                .GroupBy(x => new {
+                    x.CreatedAt.Year,
+                    Week = System.Globalization.ISOWeek.GetWeekOfYear(x.CreatedAt)
+                })
+                .OrderBy(g => g.Key.Year).ThenBy(g => g.Key.Week)
                 .Select(g => new RevenueByPeriodResponse
                 {
-                    Period = $"Week {g.Key}",
+                    Period = $"{g.Key.Year}-W{g.Key.Week:D2}",
                     Revenue = g.Sum(x => x.Amount),
                     OrderCount = g.Count()
                 })
@@ -94,7 +97,7 @@ public class DashboardService : IDashboardService
         }
         else if (period == "month")
         {
-            result = await paidPayments
+            result = paidPayments
                 .GroupBy(x => new { x.CreatedAt.Year, x.CreatedAt.Month })
                 .OrderBy(g => g.Key.Year).ThenBy(g => g.Key.Month)
                 .Select(g => new RevenueByPeriodResponse
@@ -103,11 +106,11 @@ public class DashboardService : IDashboardService
                     Revenue = g.Sum(x => x.Amount),
                     OrderCount = g.Count()
                 })
-                .ToListAsync();
+                .ToList();
         }
         else
         {
-            result = await paidPayments
+            result = paidPayments
                 .GroupBy(x => x.CreatedAt.Date)
                 .OrderBy(g => g.Key)
                 .Select(g => new RevenueByPeriodResponse
@@ -116,7 +119,7 @@ public class DashboardService : IDashboardService
                     Revenue = g.Sum(x => x.Amount),
                     OrderCount = g.Count()
                 })
-                .ToListAsync();
+                .ToList();
         }
 
         await _cache.StringSetAsync(cacheKey,
@@ -163,47 +166,51 @@ public class DashboardService : IDashboardService
         if (cached.HasValue)
             return JsonSerializer.Deserialize<IEnumerable<NewCustomersByPeriodResponse>>(cached.ToString())!;
 
-        var customers = _context.Users
-            .Where(u => u.Role == UserRole.Customer);
+        var customers = await _context.Users
+            .Where(u => u.Role == UserRole.Customer)
+            .Select(u => u.CreatedAt)
+            .ToListAsync();
 
         List<NewCustomersByPeriodResponse> result;
 
         if (period == "week")
         {
-            var raw = await customers.Select(u => u.CreatedAt).ToListAsync();
-            result = raw
-                .GroupBy(d => System.Globalization.ISOWeek.GetWeekOfYear(d))
-                .OrderBy(g => g.Key)
+            result = customers
+                .GroupBy(d => new {
+                    d.Year,
+                    Week = System.Globalization.ISOWeek.GetWeekOfYear(d)
+                })
+                .OrderBy(g => g.Key.Year).ThenBy(g => g.Key.Week)
                 .Select(g => new NewCustomersByPeriodResponse
                 {
-                    Period = $"Week {g.Key}",
+                    Period = $"{g.Key.Year}-W{g.Key.Week:D2}",
                     NewCustomers = g.Count()
                 })
                 .ToList();
         }
         else if (period == "month")
         {
-            result = await customers
-                .GroupBy(u => new { u.CreatedAt.Year, u.CreatedAt.Month })
+            result = customers
+                .GroupBy(d => new { d.Year, d.Month })
                 .OrderBy(g => g.Key.Year).ThenBy(g => g.Key.Month)
                 .Select(g => new NewCustomersByPeriodResponse
                 {
                     Period = $"{g.Key.Year}-{g.Key.Month:D2}",
                     NewCustomers = g.Count()
                 })
-                .ToListAsync();
+                .ToList();
         }
         else
         {
-            result = await customers
-                .GroupBy(u => u.CreatedAt.Date)
+            result = customers
+                .GroupBy(d => d.Date)
                 .OrderBy(g => g.Key)
                 .Select(g => new NewCustomersByPeriodResponse
                 {
                     Period = g.Key.ToString("yyyy-MM-dd"),
                     NewCustomers = g.Count()
                 })
-                .ToListAsync();
+                .ToList();
         }
 
         await _cache.StringSetAsync(cacheKey,

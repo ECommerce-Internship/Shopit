@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Shopit.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using Shopit.Infrastructure.Data;
 namespace Shopit.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260616080901_AddInventoryRowVersion")]
+    partial class AddInventoryRowVersion
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -314,18 +317,11 @@ namespace Shopit.Infrastructure.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("Features")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("ImageUrl")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
-
-                    b.Property<string>("MetaDescription")
-                        .HasMaxLength(155)
-                        .HasColumnType("nvarchar(155)");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -338,10 +334,6 @@ namespace Shopit.Infrastructure.Migrations
                     b.Property<string>("SKU")
                         .IsRequired()
                         .HasColumnType("nvarchar(450)");
-
-                    b.Property<string>("SeoTitle")
-                        .HasMaxLength(60)
-                        .HasColumnType("nvarchar(60)");
 
                     b.HasKey("Id");
 

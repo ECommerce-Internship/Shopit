@@ -225,25 +225,31 @@ public class GeminiService : IGeminiService
             throw new ValidationException("Generated meta description exceeds 155 characters.");
     }
 
-    private static async Task HandleGeminiErrorAsync(
+    private async Task HandleGeminiErrorAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
     {
         var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
+        // Log the raw upstream body server-side only; never surface it to the caller.
+        _logger.LogError(
+            "Gemini API request failed with status code {StatusCode}. Response body: {ErrorBody}",
+            (int)response.StatusCode,
+            errorBody);
+
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-            throw new UnauthorizedException($"Invalid Gemini API key or access is forbidden. Gemini response: {errorBody}");
+            throw new UnauthorizedException("Invalid Gemini API key or access is forbidden.");
 
         if ((int)response.StatusCode == 429)
-            throw new ConflictException($"Gemini rate limit reached. Please try again later. Gemini response: {errorBody}");
+            throw new ConflictException("Gemini rate limit reached. Please try again later.");
 
         if ((int)response.StatusCode == 503)
-            throw new ConflictException($"Gemini is temporarily unavailable or overloaded. Try again later or switch model. Gemini response: {errorBody}");
+            throw new ConflictException("Gemini is temporarily unavailable or overloaded. Please try again later.");
 
         if (response.StatusCode == HttpStatusCode.BadRequest)
-            throw new ValidationException($"Gemini rejected the request: {errorBody}");
+            throw new ValidationException("Gemini could not process the request. Please revise the product details and try again.");
 
-        throw new ConflictException($"Gemini API request failed with status code {(int)response.StatusCode}. Gemini response: {errorBody}");
+        throw new ConflictException("Gemini content generation failed. Please try again later.");
     }
 
     private sealed class GeminiGenerateContentResponse

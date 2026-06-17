@@ -56,6 +56,7 @@ public class ProductsController : ControllerBase
     /// Creates a new product.
     /// </summary>
     [HttpPost]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ProductResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -74,7 +75,7 @@ public class ProductsController : ControllerBase
 /// Imports products from an Excel file.
 /// </summary>
 [HttpPost("import")]
-//[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin")]
 [Consumes("multipart/form-data")]
 [RequestSizeLimit(MaxImportFileSize)]
 [ProducesResponseType(typeof(ImportResultDto), StatusCodes.Status200OK)]
@@ -111,6 +112,7 @@ public async Task<ActionResult<ImportResultDto>> Import(
     /// Updates an existing product.
     /// </summary>
     [HttpPut("{id:int}")]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ProductResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -128,6 +130,7 @@ public async Task<ActionResult<ImportResultDto>> Import(
     /// Soft deletes a product.
     /// </summary>
     [HttpDelete("{id:int}")]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(int id)
@@ -141,6 +144,7 @@ public async Task<ActionResult<ImportResultDto>> Import(
     /// Generates and persists AI content (description, SEO title, meta description, features) for a product.
     /// </summary>
     [HttpPost("{id:int}/generate-content")]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ProductResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

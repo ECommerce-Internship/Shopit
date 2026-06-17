@@ -1,4 +1,5 @@
 using Asp.Versioning;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Shopit.Application.AI;
 
@@ -9,6 +10,7 @@ namespace Shopit.API.Controllers;
 /// </summary>
 [ApiController]
 [ApiVersion("1.0")]
+[Authorize(Roles = "Admin")]
 [Route("api/v{version:apiVersion}/product-content")]
 public class ProductContentController : ControllerBase
 {

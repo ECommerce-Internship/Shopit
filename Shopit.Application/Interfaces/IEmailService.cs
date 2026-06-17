@@ -2,5 +2,5 @@ namespace Shopit.Application.Interfaces;
 
 public interface IEmailService
 {
-    Task SendOrderConfirmationAsync(int orderId, string userEmail);
+    Task SendOrderConfirmationAsync(int orderId, string email);
 }

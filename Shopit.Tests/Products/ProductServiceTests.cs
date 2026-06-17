@@ -3,6 +3,7 @@ using Moq;
 using Shopit.Application.Common;
 using Shopit.Application.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using OfficeOpenXml;
 using Shopit.Application.Products.DTOs;
 using Shopit.Application.Products.Validators;
@@ -117,7 +118,8 @@ public class ProductServiceTests
             {
                 Id = 30,
                 Quantity = 40,
-                UpdatedAt = DateTime.UtcNow
+                UpdatedAt = DateTime.UtcNow,
+                RowVersion = new byte[8]
             }
         };
 
@@ -253,45 +255,46 @@ public class ProductServiceTests
         error.Reason.Should().Contain("Price must be a valid number greater than 0.");
     }
 
-       private static ProductService CreateService(AppDbContext context)
-{
-    var cacheMock = new Mock<ICacheService>();
-    
-    cacheMock
-        .Setup(c => c.GetAsync<PaginatedResult<ProductResponse>>(It.IsAny<string>()))
-        .ReturnsAsync((PaginatedResult<ProductResponse>?)null);
-    
-    cacheMock
-        .Setup(c => c.GetAsync<ProductResponse>(It.IsAny<string>()))
-        .ReturnsAsync((ProductResponse?)null);
-    
-    cacheMock
-        .Setup(c => c.SetAsync(It.IsAny<string>(), It.IsAny<PaginatedResult<ProductResponse>>(), It.IsAny<TimeSpan>()))
-        .Returns(Task.CompletedTask);
-    
-    cacheMock
-        .Setup(c => c.SetAsync(It.IsAny<string>(), It.IsAny<ProductResponse>(), It.IsAny<TimeSpan>()))
-        .Returns(Task.CompletedTask);
-    
-    cacheMock
-        .Setup(c => c.RemoveAsync(It.IsAny<string>()))
-        .Returns(Task.CompletedTask);
-    
-    cacheMock
-        .Setup(c => c.RemoveByPatternAsync(It.IsAny<string>()))
-        .Returns(Task.CompletedTask);
+    private static ProductService CreateService(AppDbContext context)
+    {
+        var cacheMock = new Mock<ICacheService>();
 
-    return new ProductService(
-        context,
-        new CreateProductRequestValidator(),
-        new UpdateProductRequestValidator(),
-        cacheMock.Object);
-}
+        cacheMock
+            .Setup(c => c.GetAsync<PaginatedResult<ProductResponse>>(It.IsAny<string>()))
+            .ReturnsAsync((PaginatedResult<ProductResponse>?)null);
+
+        cacheMock
+            .Setup(c => c.GetAsync<ProductResponse>(It.IsAny<string>()))
+            .ReturnsAsync((ProductResponse?)null);
+
+        cacheMock
+            .Setup(c => c.SetAsync(It.IsAny<string>(), It.IsAny<PaginatedResult<ProductResponse>>(), It.IsAny<TimeSpan>()))
+            .Returns(Task.CompletedTask);
+
+        cacheMock
+            .Setup(c => c.SetAsync(It.IsAny<string>(), It.IsAny<ProductResponse>(), It.IsAny<TimeSpan>()))
+            .Returns(Task.CompletedTask);
+
+        cacheMock
+            .Setup(c => c.RemoveAsync(It.IsAny<string>()))
+            .Returns(Task.CompletedTask);
+
+        cacheMock
+            .Setup(c => c.RemoveByPatternAsync(It.IsAny<string>()))
+            .Returns(Task.CompletedTask);
+
+        return new ProductService(
+            context,
+            new CreateProductRequestValidator(),
+            new UpdateProductRequestValidator(),
+            cacheMock.Object);
+    }
 
     private static AppDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase($"ShopitTests-{Guid.NewGuid()}")
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
 
         return new AppDbContext(options);
@@ -301,6 +304,7 @@ public class ProductServiceTests
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase($"ShopitTests-{Guid.NewGuid()}")
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
 
         return new SaveChangesSpyDbContext(options);

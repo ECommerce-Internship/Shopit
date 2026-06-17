@@ -6,9 +6,12 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Shopit.API.Middleware;
 using Shopit.Application.Interfaces;
+using Shopit.Application.Products;
 using Shopit.Application.Validators;
 using Shopit.Infrastructure.Data;
+using Shopit.Infrastructure.Repositories;
 using Shopit.Infrastructure.Services;
+using StackExchange.Redis;
 using System.Reflection;
 using System.Text;
 
@@ -96,11 +99,23 @@ builder.Services.AddAuthorization();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// Redis
+var redisConnection = builder.Configuration.GetConnectionString("Redis")!;
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    ConnectionMultiplexer.Connect(redisConnection));
+
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<ILowStockAlertService, LowStockAlertServiceStub>();
 builder.Services.AddScoped<ICartService, CartService>();
+builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<IEmailService, EmailServiceStub>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
+builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddScoped<ICacheService, CacheService>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 builder.Services.AddCors(options =>
@@ -112,22 +127,6 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader();
     });
 });
-
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-
-builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
-    ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));
-
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
-builder.Services.AddScoped<ICategoryService, CategoryService>();
-builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
-builder.Services.AddScoped<ICacheService, CacheService>();
-builder.Services.AddScoped<IProductService, ProductService>();
-builder.Services.AddValidatorsFromAssembly(typeof(RegisterRequestValidator).Assembly);
-builder.Services.AddValidatorsFromAssembly(typeof(CreateCategoryRequestValidator).Assembly);
-builder.Services.AddValidatorsFromAssembly(typeof(IProductService).Assembly);
 
 var app = builder.Build();
 

@@ -1,6 +1,7 @@
 using Asp.Versioning;
 using Azure.Storage.Blobs;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -95,11 +96,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 Encoding.UTF8.GetBytes(jwtSettings["SecretKey"]!))
         };
     })
+    .AddCookie()
     .AddGoogle(options =>
     {
         options.ClientId = builder.Configuration["Authentication:Google:ClientId"]!;
         options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"]!;
         options.CallbackPath = "/signin-google";
+        options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
     });
 
 builder.Services.AddAuthorization();

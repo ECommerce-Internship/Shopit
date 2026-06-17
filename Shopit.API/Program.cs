@@ -1,5 +1,7 @@
 using Asp.Versioning;
+using Azure.Storage.Blobs;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -96,6 +98,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             IssuerSigningKey = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(jwtSettings["SecretKey"]!))
         };
+    })
+    .AddGoogle(options =>
+    {
+        options.ClientId = builder.Configuration["Authentication:Google:ClientId"]!;
+        options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"]!;
+        options.CallbackPath = "/signin-google";
     });
 
 builder.Services.AddAuthorization();
@@ -107,6 +115,10 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 var redisConnection = builder.Configuration.GetConnectionString("Redis")!;
 builder.Services.AddSingleton<IConnectionMultiplexer>(
     ConnectionMultiplexer.Connect(redisConnection));
+
+// Azure Blob Storage
+var blobConnection = builder.Configuration.GetConnectionString("AzureBlobStorage")!;
+builder.Services.AddSingleton(new BlobServiceClient(blobConnection));
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
@@ -120,6 +132,7 @@ builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICacheService, CacheService>();
+builder.Services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 builder.Services.AddCors(options =>

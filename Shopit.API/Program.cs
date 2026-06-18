@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Shopit.API.Middleware;
+using Shopit.Application.AI;
 using Shopit.Application.Interfaces;
 using Shopit.Application.Products;
 using Shopit.Application.Validators;
@@ -15,7 +16,9 @@ using Shopit.Infrastructure.Repositories;
 using Shopit.Infrastructure.Services;
 using StackExchange.Redis;
 using System.Reflection;
+using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -131,6 +134,37 @@ builder.Services.AddScoped<ICacheService, CacheService>();
 builder.Services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
+// Gemini AI content generation
+builder.Services.AddHttpClient("GeminiClient", client =>
+{
+    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddScoped<IGeminiService, GeminiService>();
+
+// Rate limiting for the AI content-generation endpoints: 10 requests/minute,
+// partitioned by the authenticated user (falling back to remote IP). Rejected
+// requests return 429.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("GeminiContentGeneration", httpContext =>
+    {
+        var userId = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var partitionKey = !string.IsNullOrEmpty(userId)
+            ? $"user:{userId}"
+            : $"ip:{httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"}";
+
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+        });
+    });
+});
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(DevelopmentCorsPolicy, policy =>
@@ -165,5 +199,6 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.MapControllers();
 app.Run();

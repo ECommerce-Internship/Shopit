@@ -48,6 +48,7 @@ public class ExceptionHandlingMiddleware
             ValidationException => (400, "Bad Request"),
             UnauthorizedException => (401, "Unauthorized"),
             ForbiddenException => (403, "Forbidden"),
+            ExternalServiceException => (502, "Bad Gateway"),
             _ => (500, "Internal Server Error")
         };
 

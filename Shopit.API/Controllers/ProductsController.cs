@@ -1,6 +1,8 @@
 using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Shopit.Application.AI;
 using Shopit.Application.Common;
 using Shopit.Application.Interfaces;
 using Shopit.Application.Products;
@@ -156,6 +158,28 @@ public class ProductsController : ControllerBase
         var url = await _productService.UploadImageAsync(id, file, _blobStorageService, BlobContainerName);
 
         return Ok(new { imageUrl = url });
+    }
+
+    /// <summary>
+    /// Generates AI marketing-content suggestions for a product (description, 5 features,
+    /// SEO title, meta description). Admin only. Returns a suggestion for review and does
+    /// NOT persist anything — apply chosen fields via PUT /products/{id}. Rate limited.
+    /// </summary>
+    [HttpPost("{id:int}/generate-content")]
+    [Authorize(Roles = "Admin")]
+    [EnableRateLimiting("GeminiContentGeneration")]
+    [ProducesResponseType(typeof(ProductContentResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<ProductContentResponse>> GenerateContent(
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var content = await _productService.GenerateContentAsync(id, cancellationToken);
+        return Ok(content);
     }
 
     /// <summary>

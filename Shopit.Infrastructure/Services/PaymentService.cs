@@ -39,10 +39,9 @@ public class PaymentService : IPaymentService
         if (existingPayment is not null)
             throw new ConflictException($"Order {request.OrderId} has already been paid.");
 
-        // Mock payment processing
-        var status = request.PaymentMethod.ToString() == "FailTest"
-            ? PaymentStatus.Failed
-            : PaymentStatus.Paid;
+       var status = request.SimulateFailure
+        ? PaymentStatus.Failed
+        : PaymentStatus.Paid;
 
         var payment = new Payment
         {
@@ -84,7 +83,8 @@ public class PaymentService : IPaymentService
             throw new ForbiddenException("You are not authorized to view this payment.");
 
         var payment = await _context.Payments
-            .FirstOrDefaultAsync(p => p.OrderId == orderId);
+        .OrderByDescending(p => p.Id)
+        .FirstOrDefaultAsync(p => p.OrderId == orderId);
 
         if (payment is null)
             throw new NotFoundException($"No payment found for Order {orderId}.");

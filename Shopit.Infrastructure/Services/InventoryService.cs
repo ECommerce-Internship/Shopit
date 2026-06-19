@@ -41,7 +41,7 @@ public class InventoryService : IInventoryService
         return MapToResponse(inventory);
     }
 
-    public async Task<InventoryResponse> UpdateStockAsync(int productId, int quantity)
+   public async Task<InventoryResponse> UpdateStockAsync(int productId, int quantity)
 {
     var inventory = await _context.Inventories
         .Include(i => i.Product)
@@ -53,27 +53,26 @@ public class InventoryService : IInventoryService
     inventory.Quantity = quantity;
     inventory.UpdatedAt = DateTime.UtcNow;
     await _context.SaveChangesAsync();
-   try
-    {
-        Console.WriteLine($"=== CHECKING LOW STOCK: quantity={quantity}, threshold={inventory.LowStockThreshold} ===");
 
+    try
+    {
         if (quantity <= inventory.LowStockThreshold)
-{
-    Console.WriteLine($"=== LOW STOCK TRIGGERED for {inventory.Product.Name} ===");
-    await _lowStockAlertService.SendAlertAsync(
-        inventory.ProductId,
-        inventory.Product.Name,
-        quantity,
-        inventory.LowStockThreshold);
-}
-      
+        {
+            Log.Warning("Low stock triggered for {ProductName} - Qty: {Qty}, Threshold: {Threshold}",
+                inventory.Product.Name, quantity, inventory.LowStockThreshold);
+            await _lowStockAlertService.SendAlertAsync(
+                inventory.ProductId,
+                inventory.Product.Name,
+                quantity,
+                inventory.LowStockThreshold);
+        }
     }
     catch (Exception ex)
     {
-        Log.Error(ex, "FAILED in low stock check: {Message}", ex.Message);
+        Log.Error(ex, "Failed in low stock check for product {ProductId}", productId);
     }
 
-return MapToResponse(inventory);
+    return MapToResponse(inventory);
 }
 
     public async Task<IEnumerable<InventoryResponse>> GetLowStockAsync()

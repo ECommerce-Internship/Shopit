@@ -78,6 +78,7 @@ public class CategoryService : ICategoryService
 
         if (request.ParentCategoryId.HasValue)
         {
+            // Guard against circular references
             var ancestorId = request.ParentCategoryId;
             while (ancestorId.HasValue)
             {

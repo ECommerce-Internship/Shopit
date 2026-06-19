@@ -1,8 +1,11 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Shopit.Application.DTOs.Auth;
 using Shopit.Application.Interfaces;
 using Shopit.Domain.Entities;
 using Shopit.Domain.Enums;
+using Shopit.Domain.Exceptions;
 using Shopit.Infrastructure.Data;
 
 namespace Shopit.Infrastructure.Services;
@@ -11,21 +14,27 @@ public class ExternalAuthService : IExternalAuthService
 {
     private readonly AppDbContext _context;
     private readonly IJwtTokenService _jwtTokenService;
+    private readonly IConfiguration _config;
 
-    public ExternalAuthService(AppDbContext context, IJwtTokenService jwtTokenService)
+    public ExternalAuthService(AppDbContext context, IJwtTokenService jwtTokenService, IConfiguration config)
     {
         _context = context;
         _jwtTokenService = jwtTokenService;
+        _config = config;
     }
 
-    public async Task<(string AccessToken, string RefreshToken)> HandleCallbackAsync(string provider, IEnumerable<Claim> claims)
+    public async Task<AuthResponse> HandleCallbackAsync(string provider, IEnumerable<Claim> claims)
     {
         // Step 1: Extract email and ProviderUserId from claims
         var email = claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value
-            ?? throw new Exception("Email claim not found.");
+            ?? throw new UnauthorizedException("Email claim not found.");
 
         var providerUserId = claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value
-            ?? throw new Exception("ProviderUserId claim not found.");
+            ?? throw new UnauthorizedException("ProviderUserId claim not found.");
+
+        // Check email_verified claim to prevent account-takeover via unverified email
+        var emailVerifiedClaim = claims.FirstOrDefault(c => c.Type == "email_verified")?.Value;
+        var emailVerified = string.IsNullOrEmpty(emailVerifiedClaim) || bool.Parse(emailVerifiedClaim);
 
         var providerEmail = email;
 
@@ -43,6 +52,9 @@ public class ExternalAuthService : IExternalAuthService
         }
         else
         {
+            if (!emailVerified)
+                throw new UnauthorizedException("Email is not verified by the provider.");
+
             // Step 3: Check if user exists with same email
             var existingUser = await _context.Users
                 .FirstOrDefaultAsync(u => u.Email == email);
@@ -95,6 +107,7 @@ public class ExternalAuthService : IExternalAuthService
 
         // Step 5: Issue JWT + refresh token
         var accessToken = _jwtTokenService.GenerateAccessToken(user);
+        var expiresIn = int.Parse(_config["JwtSettings:ExpiryMinutes"] ?? "15") * 60;
 
         var refreshToken = new RefreshToken
         {
@@ -107,6 +120,19 @@ public class ExternalAuthService : IExternalAuthService
         _context.RefreshTokens.Add(refreshToken);
         await _context.SaveChangesAsync();
 
-        return (accessToken, refreshToken.Token);
+        return new AuthResponse
+        {
+            AccessToken = accessToken,
+            RefreshToken = refreshToken.Token,
+            ExpiresIn = expiresIn,
+            User = new UserDto
+            {
+                Id = user.Id,
+                Email = user.Email,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                Role = user.Role.ToString()
+            }
+        };
     }
 }

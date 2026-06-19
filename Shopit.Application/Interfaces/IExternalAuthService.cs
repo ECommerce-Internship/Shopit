@@ -1,8 +1,9 @@
 using System.Security.Claims;
+using Shopit.Application.DTOs.Auth;
 
 namespace Shopit.Application.Interfaces;
 
 public interface IExternalAuthService
 {
-    Task<(string AccessToken, string RefreshToken)> HandleCallbackAsync(string provider, IEnumerable<Claim> claims);
+    Task<AuthResponse> HandleCallbackAsync(string provider, IEnumerable<Claim> claims);
 }

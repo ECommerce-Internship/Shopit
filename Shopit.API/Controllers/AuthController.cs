@@ -141,9 +141,15 @@ public class AuthController : ControllerBase
     [ProducesResponseType(StatusCodes.Status302Found)]
     public IActionResult GoogleLogin()
     {
+        var redirectUri = Url.Action(
+            action: nameof(GoogleCallback),
+            controller: "Auth",
+            values: new { version = "1.0" },
+            protocol: Request.Scheme);
+
         var properties = new AuthenticationProperties
         {
-            RedirectUri = Url.Action(nameof(GoogleCallback), "Auth", null, Request.Scheme)
+            RedirectUri = redirectUri
         };
         return Challenge(properties, GoogleDefaults.AuthenticationScheme);
     }
@@ -158,12 +164,8 @@ public class AuthController : ControllerBase
             return Unauthorized("Google authentication failed.");
 
         var claims = result.Principal!.Claims;
-        var (accessToken, refreshToken) = await _externalAuthService.HandleCallbackAsync("Google", claims);
+        var response = await _externalAuthService.HandleCallbackAsync("Google", claims);
 
-        return Ok(new AuthResponse
-        {
-            AccessToken = accessToken,
-            RefreshToken = refreshToken
-        });
+        return Ok(response);
     }
 }

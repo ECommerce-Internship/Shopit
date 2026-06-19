@@ -22,9 +22,9 @@ public class ExternalAuthServiceTests
         return new AppDbContext(options);
     }
 
-    private JwtTokenService CreateJwtTokenService()
+    private IConfiguration CreateConfig()
     {
-        var config = new ConfigurationBuilder()
+        return new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["JwtSettings:SecretKey"] = "Shopit-Super-Secret-Key-That-Is-At-Least-32-Chars!!",
@@ -33,17 +33,22 @@ public class ExternalAuthServiceTests
                 ["JwtSettings:ExpiryMinutes"] = "15"
             })
             .Build();
+    }
+
+    private JwtTokenService CreateJwtTokenService(IConfiguration config)
+    {
         return new JwtTokenService(config);
     }
 
-    private IEnumerable<Claim> BuildGoogleClaims(string email, string providerUserId, string firstName = "John", string lastName = "Doe")
+    private IEnumerable<Claim> BuildGoogleClaims(string email, string providerUserId, string firstName = "John", string lastName = "Doe", bool emailVerified = true)
     {
         return new List<Claim>
         {
             new Claim(ClaimTypes.Email, email),
             new Claim(ClaimTypes.NameIdentifier, providerUserId),
             new Claim(ClaimTypes.GivenName, firstName),
-            new Claim(ClaimTypes.Surname, lastName)
+            new Claim(ClaimTypes.Surname, lastName),
+            new Claim("email_verified", emailVerified.ToString().ToLower())
         };
     }
 
@@ -51,7 +56,8 @@ public class ExternalAuthServiceTests
     public async Task ExistingExternalLogin_ReturnsExistingUser()
     {
         var db = CreateDb();
-        var jwtService = CreateJwtTokenService();
+        var config = CreateConfig();
+        var jwtService = CreateJwtTokenService(config);
 
         var user = new User
         {
@@ -77,20 +83,24 @@ public class ExternalAuthServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new ExternalAuthService(db, jwtService);
+        var service = new ExternalAuthService(db, jwtService, config);
         var claims = BuildGoogleClaims("john@gmail.com", "google-123");
 
-        var (accessToken, refreshToken) = await service.HandleCallbackAsync("Google", claims);
+        var response = await service.HandleCallbackAsync("Google", claims);
 
-        accessToken.Should().NotBeNullOrEmpty();
-        refreshToken.Should().NotBeNullOrEmpty();
+        response.AccessToken.Should().NotBeNullOrEmpty();
+        response.RefreshToken.Should().NotBeNullOrEmpty();
+        response.ExpiresIn.Should().BeGreaterThan(0);
+        response.User.Should().NotBeNull();
+        response.User.Email.Should().Be("john@gmail.com");
     }
 
     [Fact]
     public async Task NewExternalLogin_ExistingEmail_LinksAndReturnsUser()
     {
         var db = CreateDb();
-        var jwtService = CreateJwtTokenService();
+        var config = CreateConfig();
+        var jwtService = CreateJwtTokenService(config);
 
         var user = new User
         {
@@ -105,13 +115,14 @@ public class ExternalAuthServiceTests
         db.Users.Add(user);
         await db.SaveChangesAsync();
 
-        var service = new ExternalAuthService(db, jwtService);
+        var service = new ExternalAuthService(db, jwtService, config);
         var claims = BuildGoogleClaims("jane@gmail.com", "google-456");
 
-        var (accessToken, refreshToken) = await service.HandleCallbackAsync("Google", claims);
+        var response = await service.HandleCallbackAsync("Google", claims);
 
-        accessToken.Should().NotBeNullOrEmpty();
-        refreshToken.Should().NotBeNullOrEmpty();
+        response.AccessToken.Should().NotBeNullOrEmpty();
+        response.RefreshToken.Should().NotBeNullOrEmpty();
+        response.User.Email.Should().Be("jane@gmail.com");
 
         var externalLogin = await db.UserExternalLogins
             .FirstOrDefaultAsync(el => el.ProviderUserId == "google-456");
@@ -123,15 +134,17 @@ public class ExternalAuthServiceTests
     public async Task NewExternalLogin_NewEmail_CreatesUserAndReturnsJwt()
     {
         var db = CreateDb();
-        var jwtService = CreateJwtTokenService();
+        var config = CreateConfig();
+        var jwtService = CreateJwtTokenService(config);
 
-        var service = new ExternalAuthService(db, jwtService);
+        var service = new ExternalAuthService(db, jwtService, config);
         var claims = BuildGoogleClaims("newuser@gmail.com", "google-789");
 
-        var (accessToken, refreshToken) = await service.HandleCallbackAsync("Google", claims);
+        var response = await service.HandleCallbackAsync("Google", claims);
 
-        accessToken.Should().NotBeNullOrEmpty();
-        refreshToken.Should().NotBeNullOrEmpty();
+        response.AccessToken.Should().NotBeNullOrEmpty();
+        response.RefreshToken.Should().NotBeNullOrEmpty();
+        response.User.Email.Should().Be("newuser@gmail.com");
 
         var user = await db.Users.FirstOrDefaultAsync(u => u.Email == "newuser@gmail.com");
         user.Should().NotBeNull();
@@ -144,12 +157,13 @@ public class ExternalAuthServiceTests
     }
 
     [Fact]
-    public async Task NullEmail_ThrowsException()
+    public async Task NullEmail_ThrowsUnauthorizedException()
     {
         var db = CreateDb();
-        var jwtService = CreateJwtTokenService();
+        var config = CreateConfig();
+        var jwtService = CreateJwtTokenService(config);
 
-        var service = new ExternalAuthService(db, jwtService);
+        var service = new ExternalAuthService(db, jwtService, config);
         var claims = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, "google-000")
@@ -158,7 +172,7 @@ public class ExternalAuthServiceTests
 
         var act = async () => await service.HandleCallbackAsync("Google", claims);
 
-        await act.Should().ThrowAsync<Exception>()
+        await act.Should().ThrowAsync<Shopit.Domain.Exceptions.UnauthorizedException>()
             .WithMessage("*Email claim not found*");
     }
 
@@ -166,18 +180,21 @@ public class ExternalAuthServiceTests
     public async Task ValidUser_JwtContainsCorrectRoleClaim()
     {
         var db = CreateDb();
-        var jwtService = CreateJwtTokenService();
+        var config = CreateConfig();
+        var jwtService = CreateJwtTokenService(config);
 
-        var service = new ExternalAuthService(db, jwtService);
+        var service = new ExternalAuthService(db, jwtService, config);
         var claims = BuildGoogleClaims("roletest@gmail.com", "google-role-123");
 
-        var (accessToken, _) = await service.HandleCallbackAsync("Google", claims);
+        var response = await service.HandleCallbackAsync("Google", claims);
 
         var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
-        var jwt = handler.ReadJwtToken(accessToken);
+        var jwt = handler.ReadJwtToken(response.AccessToken);
 
         var roleClaim = jwt.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role || c.Type == "role");
         roleClaim.Should().NotBeNull();
         roleClaim!.Value.Should().Be("Customer");
+
+        response.User.Role.Should().Be("Customer");
     }
 }

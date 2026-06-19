@@ -113,7 +113,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // Redis
 var redisConnection = builder.Configuration.GetConnectionString("Redis")!;
 builder.Services.AddSingleton<IConnectionMultiplexer>(
-    ConnectionMultiplexer.Connect(redisConnection));
+    ConnectionMultiplexer.Connect(redisConnection + ",abortConnect=false"));
 
 // Azure Blob Storage
 var blobConnection = builder.Configuration.GetConnectionString("AzureBlobStorage")!;

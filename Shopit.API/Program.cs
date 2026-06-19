@@ -1,7 +1,3 @@
-
-using Serilog;
-using Serilog.Events;
-using Shopit.API.Middleware;
 using Asp.Versioning;
 using FluentValidation;
 using FluentValidation.AspNetCore;
@@ -9,28 +5,21 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Shopit.API.Middleware;
 using Shopit.Application.Interfaces;
+using Shopit.Application.Products;
 using Shopit.Application.Validators;
 using Shopit.Infrastructure.Data;
-using StackExchange.Redis;
 using Shopit.Infrastructure.Repositories;
 using Shopit.Infrastructure.Services;
+using Shopit.Infrastructure.Workers;
+using StackExchange.Redis;
 using System.Reflection;
 using System.Text;
+using Azure.Storage.Queues;
+
 
 var builder = WebApplication.CreateBuilder(args);
-
-// Serilog configured AFTER builder so it can read from configuration
-builder.Host.UseSerilog((context, config) =>
-{
-    config
-        .MinimumLevel.Information()
-        .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
-        .Enrich.FromLogContext()
-        .Enrich.WithMachineName()
-        .WriteTo.Console()
-        .WriteTo.Seq(context.Configuration["Seq:ServerUrl"]!);
-});
 
 const string DevelopmentCorsPolicy = "DevelopmentCorsPolicy";
 
@@ -92,7 +81,6 @@ builder.Services.AddSwaggerGen(options =>
         options.IncludeXmlComments(xmlPath);
 });
 
-// JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -112,15 +100,34 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
-// DB
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// App services
+//registering QueueCLient in the dependency injection container for LowStockAlertService
+var storageConnectionString = builder.Configuration["Azure:StorageConnectionString"]!;
+var queueName = builder.Configuration["Azure:LowStockQueueName"]!;
+builder.Services.AddSingleton(new QueueClient(storageConnectionString, queueName));
+
+// Redis
+var redisConnection = builder.Configuration.GetConnectionString("Redis")!;
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    ConnectionMultiplexer.Connect(redisConnection));
+
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddFluentValidationAutoValidation();
+builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddScoped<ILowStockAlertService, LowStockAlertService>();
+builder.Services.AddScoped<ICartService, CartService>();
+builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<IEmailService, SendGridEmailService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
+builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddScoped<ICacheService, CacheService>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
+builder.Services.AddHostedService<LowStockWorker>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(DevelopmentCorsPolicy, policy =>
@@ -131,40 +138,25 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-
-builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
-    ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));
-
-builder.Services.AddScoped<ICategoryService, CategoryService>();
-
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
+    using (var scope = app.Services.CreateScope())
+    {
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        context.Database.Migrate();
+        DbInitializer.Seed(context);
+    }
+
     app.UseSwagger();
     app.UseSwaggerUI(options =>
     {
         options.SwaggerEndpoint("/swagger/v1/swagger.json", "Shopit API v1");
         options.RoutePrefix = "swagger";
     });
-
     app.UseCors(DevelopmentCorsPolicy);
-
-    using var scope = app.Services.CreateScope();
-    var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    DbInitializer.Seed(context);
 }
-
-app.UseSerilogRequestLogging(options =>
-{
-    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
-    {
-        diagnosticContext.Set("ClientIp", httpContext.Connection.RemoteIpAddress?.ToString());
-        diagnosticContext.Set("UserId", httpContext.User?.FindFirst("sub")?.Value ?? "anonymous");
-    };
-});
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseHttpsRedirection();

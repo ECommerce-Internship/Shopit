@@ -6,7 +6,7 @@
 # dotenv files
 .env
 
-# Machine-specific local configuration (use appsettings.Development.example.json as a template)
+# Local development app settings
 appsettings.Development.json
 
 # User-specific files

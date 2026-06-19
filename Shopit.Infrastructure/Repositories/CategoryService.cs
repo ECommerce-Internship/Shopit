@@ -1,67 +1,54 @@
-using Microsoft.EntityFrameworkCore;
+using Serilog;
 using Shopit.Application.DTOs.Categories;
 using Shopit.Application.Interfaces;
 using Shopit.Domain.Entities;
 using Shopit.Domain.Exceptions;
-using Shopit.Infrastructure.Data;
-using Serilog;
 
 namespace Shopit.Infrastructure.Repositories;
 
 public class CategoryService : ICategoryService
 {
-    private readonly AppDbContext _context;
+    private readonly ICategoryRepository _repository;
 
-    public CategoryService(AppDbContext context)
+    public CategoryService(ICategoryRepository repository)
     {
-        _context = context;
+        _repository = repository;
     }
 
     public async Task<List<CategoryResponse>> GetAllAsync()
     {
-        var categories = await _context.Categories
-            .Include(c => c.SubCategories)
-            .Where(c => c.ParentCategoryId == null)  // only root categories
-            .ToListAsync();
-
-        Log.Information("Retrieved {Count} categories", categories.Count);
-
+        var categories = await _repository.GetAllRootAsync();
+        Log.Information("Retrieved {Count} root categories", categories.Count);
         return categories.Select(MapToResponse).ToList();
     }
 
     public async Task<CategoryResponse> GetByIdAsync(int id)
     {
-        var category = await _context.Categories
-            .Include(c => c.SubCategories)
-            .FirstOrDefaultAsync(c => c.Id == id);
-
+        var category = await _repository.GetByIdAsync(id);
         if (category is null)
         {
             Log.Warning("Category not found: {CategoryId}", id);
             throw new NotFoundException($"Category with ID {id} was not found.");
         }
-
         return MapToResponse(category);
     }
 
     public async Task<CategoryResponse> CreateAsync(CreateCategoryRequest request)
     {
-        var exists = await _context.Categories
-            .AnyAsync(c => c.Name.ToLower() == request.Name.ToLower());
-
-        if (exists)
+        var existing = await _repository.GetByNameAsync(request.Name);
+        if (existing is not null)
         {
             Log.Warning("Duplicate category name attempted: {Name}", request.Name);
             throw new ConflictException($"A category with the name '{request.Name}' already exists.");
         }
+
         if (request.ParentCategoryId.HasValue)
         {
-            var parentExists = await _context.Categories
-                .AnyAsync(c => c.Id == request.ParentCategoryId.Value);
-
-            if (!parentExists)
-                throw new NotFoundException($"Parent category with id {request.ParentCategoryId.Value} was not found.");
+            var parentExists = await _repository.GetByIdAsync(request.ParentCategoryId.Value);
+            if (parentExists is null)
+                throw new NotFoundException($"Parent category with ID {request.ParentCategoryId.Value} was not found.");
         }
+
         var category = new Category
         {
             Name = request.Name,
@@ -69,78 +56,66 @@ public class CategoryService : ICategoryService
             ParentCategoryId = request.ParentCategoryId
         };
 
-        _context.Categories.Add(category);
-        await _context.SaveChangesAsync();
+        await _repository.AddAsync(category);
+        await _repository.SaveChangesAsync();
 
         Log.Information("Category created: {CategoryId} - {Name}", category.Id, category.Name);
-
         return MapToResponse(category);
     }
 
     public async Task<CategoryResponse> UpdateAsync(int id, UpdateCategoryRequest request)
     {
-        var category = await _context.Categories
-            .Include(c => c.SubCategories)
-            .FirstOrDefaultAsync(c => c.Id == id);
-
+        var category = await _repository.GetByIdAsync(id);
         if (category is null)
             throw new NotFoundException($"Category with ID {id} was not found.");
-        var nameExists = await _context.Categories
-            .AnyAsync(c => c.Name == request.Name && c.Id != id);
-        if (nameExists)
-        {
-            throw new ConflictException($"A category with the name '{request.Name}' already exists.");
-        }
-        // Guard 1: prevent self-referencing
-        if (request.ParentCategoryId == category.Id)
-        {
-            throw new ConflictException("A category cannot be its own parent.");
-        }
 
-        // Guard 2: prevent circular reference (e.g. A→B→C→A)
+        var nameExists = await _repository.GetByNameAsync(request.Name);
+        if (nameExists is not null && nameExists.Id != id)
+            throw new ConflictException($"A category with the name '{request.Name}' already exists.");
+
+        if (request.ParentCategoryId.HasValue && request.ParentCategoryId.Value == id)
+            throw new ConflictException("A category cannot be its own parent.");
+
         if (request.ParentCategoryId.HasValue)
         {
             var ancestorId = request.ParentCategoryId;
             while (ancestorId.HasValue)
             {
-                if (ancestorId == category.Id)
+                if (ancestorId == id)
                     throw new ConflictException("Assigning this parent would create a circular reference.");
-                var ancestor = await _context.Categories.FindAsync(ancestorId.Value);
+                var ancestor = await _repository.GetByIdAsync(ancestorId.Value);
                 ancestorId = ancestor?.ParentCategoryId;
             }
+
+            var parentExists = await _repository.GetByIdAsync(request.ParentCategoryId.Value);
+            if (parentExists is null)
+                throw new NotFoundException($"Parent category with ID {request.ParentCategoryId.Value} was not found.");
         }
 
         category.Name = request.Name;
         category.Slug = request.Name.ToLower().Replace(" ", "-");
         category.ParentCategoryId = request.ParentCategoryId;
 
-        await _context.SaveChangesAsync();
-
+        await _repository.SaveChangesAsync();
         Log.Information("Category updated: {CategoryId}", id);
-
         return MapToResponse(category);
     }
 
     public async Task DeleteAsync(int id)
     {
-        var category = await _context.Categories
-            .Include(c => c.Products)
-            .FirstOrDefaultAsync(c => c.Id == id);
-
+        var category = await _repository.GetByIdAsync(id);
         if (category is null)
             throw new NotFoundException($"Category with ID {id} was not found.");
 
-        if (category.Products.Any())
+        var productCount = await _repository.GetProductCountAsync(id);
+        if (productCount > 0)
         {
-            Log.Warning("Delete blocked: Category {CategoryId} has {Count} linked products", 
-                id, category.Products.Count);
-            throw new ConflictException(
-                $"Cannot delete category '{category.Name}' because it has {category.Products.Count} linked product(s).");
+            Log.Warning("Delete blocked: Category {CategoryId} has {Count} linked products", id, productCount);
+            throw new ConflictException($"Cannot delete category '{category.Name}' because it has {productCount} linked product(s). Remove the products first.");
         }
 
-        _context.Categories.Remove(category);
-        await _context.SaveChangesAsync();
-
+        await _repository.DeleteAsync(category);
+        await _repository.SaveChangesAsync();
         Log.Information("Category deleted: {CategoryId}", id);
     }
 

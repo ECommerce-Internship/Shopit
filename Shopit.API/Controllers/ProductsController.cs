@@ -1,7 +1,10 @@
 using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Shopit.Application.AI;
 using Shopit.Application.Common;
+using Shopit.Application.Interfaces;
 using Shopit.Application.Products;
 using Shopit.Application.Products.DTOs;
 using DomainValidationException = Shopit.Domain.Exceptions.ValidationException;
@@ -17,11 +20,16 @@ namespace Shopit.API.Controllers;
 public class ProductsController : ControllerBase
 {
     private const long MaxImportFileSize = 10 * 1024 * 1024;
-    private readonly IProductService _productService;
+    private const long MaxImageFileSize = 5 * 1024 * 1024;
+    private const string BlobContainerName = "product-images";
 
-    public ProductsController(IProductService productService)
+    private readonly IProductService _productService;
+    private readonly IBlobStorageService _blobStorageService;
+
+    public ProductsController(IProductService productService, IBlobStorageService blobStorageService)
     {
         _productService = productService;
+        _blobStorageService = blobStorageService;
     }
 
     /// <summary>
@@ -34,7 +42,6 @@ public class ProductsController : ControllerBase
         [FromQuery] ProductQueryParameters queryParameters)
     {
         var products = await _productService.GetAllAsync(queryParameters);
-
         return Ok(products);
     }
 
@@ -47,7 +54,6 @@ public class ProductsController : ControllerBase
     public async Task<ActionResult<ProductResponse>> GetById(int id)
     {
         var product = await _productService.GetByIdAsync(id);
-
         return Ok(product);
     }
 
@@ -70,41 +76,34 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>
-/// Imports products from an Excel file.
-/// </summary>
-[HttpPost("import")]
-//[Authorize(Roles = "Admin")]
-[Consumes("multipart/form-data")]
-[RequestSizeLimit(MaxImportFileSize)]
-[ProducesResponseType(typeof(ImportResultDto), StatusCodes.Status200OK)]
-[ProducesResponseType(StatusCodes.Status400BadRequest)]
-public async Task<ActionResult<ImportResultDto>> Import(
-    IFormFile? file,
-    CancellationToken cancellationToken)
-{
-    if (file is null || file.Length == 0)
+    /// Imports products from an Excel file.
+    /// </summary>
+    [HttpPost("import")]
+    //[Authorize(Roles = "Admin")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(MaxImportFileSize)]
+    [ProducesResponseType(typeof(ImportResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ImportResultDto>> Import(
+        IFormFile? file,
+        CancellationToken cancellationToken)
     {
-        throw new DomainValidationException("Excel file is required.");
+        if (file is null || file.Length == 0)
+            throw new DomainValidationException("Excel file is required.");
+
+        var extension = Path.GetExtension(file.FileName);
+
+        if (!string.Equals(extension, ".xlsx", StringComparison.OrdinalIgnoreCase))
+            throw new DomainValidationException("Only .xlsx Excel files are allowed.");
+
+        if (file.Length > MaxImportFileSize)
+            throw new DomainValidationException("File size must not exceed 10MB.");
+
+        using var stream = file.OpenReadStream();
+        var result = await _productService.ImportAsync(stream, cancellationToken);
+
+        return Ok(result);
     }
-
-    var extension = Path.GetExtension(file.FileName);
-
-    if (!string.Equals(extension, ".xlsx", StringComparison.OrdinalIgnoreCase))
-    {
-        throw new DomainValidationException("Only .xlsx Excel files are allowed.");
-    }
-
-    if (file.Length > MaxImportFileSize)
-    {
-        throw new DomainValidationException("File size must not exceed 10MB.");
-    }
-
-    using var stream = file.OpenReadStream();
-
-    var result = await _productService.ImportAsync(stream, cancellationToken);
-
-    return Ok(result);
-}
 
     /// <summary>
     /// Updates an existing product.
@@ -119,7 +118,6 @@ public async Task<ActionResult<ImportResultDto>> Import(
         [FromBody] UpdateProductRequest request)
     {
         var product = await _productService.UpdateAsync(id, request);
-
         return Ok(product);
     }
 
@@ -132,7 +130,68 @@ public async Task<ActionResult<ImportResultDto>> Import(
     public async Task<IActionResult> Delete(int id)
     {
         await _productService.DeleteAsync(id);
+        return NoContent();
+    }
 
+    /// <summary>
+    /// Uploads an image for a product. Admin only.
+    /// </summary>
+    [HttpPost("{id:int}/image")]
+    [Authorize(Roles = "Admin")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(MaxImageFileSize)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UploadImage(int id, IFormFile? file)
+    {
+        if (file is null || file.Length == 0)
+            throw new DomainValidationException("Image file is required.");
+
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (extension != ".jpg" && extension != ".jpeg" && extension != ".png")
+            throw new DomainValidationException("Only jpg and png images are allowed.");
+
+        if (file.Length > MaxImageFileSize)
+            throw new DomainValidationException("Image must not exceed 5MB.");
+
+        var url = await _productService.UploadImageAsync(id, file, _blobStorageService, BlobContainerName);
+
+        return Ok(new { imageUrl = url });
+    }
+
+    /// <summary>
+    /// Generates AI marketing-content suggestions for a product (description, 5 features,
+    /// SEO title, meta description). Admin only. Returns a suggestion for review and does
+    /// NOT persist anything — apply chosen fields via PUT /products/{id}. Rate limited.
+    /// </summary>
+    [HttpPost("{id:int}/generate-content")]
+    [Authorize(Roles = "Admin")]
+    [EnableRateLimiting("GeminiContentGeneration")]
+    [ProducesResponseType(typeof(ProductContentResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<ProductContentResponse>> GenerateContent(
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var content = await _productService.GenerateContentAsync(id, cancellationToken);
+        return Ok(content);
+    }
+
+    /// <summary>
+    /// Deletes the image of a product. Admin only.
+    /// </summary>
+    [HttpDelete("{id:int}/image")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteImage(int id)
+    {
+        await _productService.DeleteImageAsync(id, _blobStorageService, BlobContainerName);
         return NoContent();
     }
 }

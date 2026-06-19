@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Moq;
+using Shopit.Application.AI;
 using Shopit.Application.Common;
 using Shopit.Application.Interfaces;
 using Microsoft.EntityFrameworkCore;
@@ -255,7 +256,73 @@ public class ProductServiceTests
         error.Reason.Should().Contain("Price must be a valid number greater than 0.");
     }
 
-    private static ProductService CreateService(AppDbContext context)
+    [Fact]
+    public async Task GenerateContent_ExistingProduct_DelegatesToGeminiWithProductData()
+    {
+        await using var context = CreateContext();
+
+        var category = new Category { Id = 1, Name = "Phone Accessories", Slug = "phone-accessories" };
+        context.Categories.Add(category);
+        context.Products.Add(new Product
+        {
+            Id = 70,
+            Name = "iPhone 15 Pro Case",
+            Description = "MagSafe compatible, silicone, shockproof",
+            Price = 19.99m,
+            SKU = "CASE-001",
+            CategoryId = 1,
+            Category = category,
+            CreatedAt = DateTime.UtcNow,
+            IsDeleted = false
+        });
+        await context.SaveChangesAsync();
+
+        var expected = new ProductContentResponse
+        {
+            Description = "A great case.",
+            Features = new List<string> { "1", "2", "3", "4", "5" },
+            SeoTitle = "iPhone 15 Pro Case",
+            MetaDescription = "Protect your phone."
+        };
+
+        var geminiMock = new Mock<IGeminiService>();
+        geminiMock
+            .Setup(g => g.GenerateProductContentAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var service = CreateService(context, geminiMock.Object);
+
+        var result = await service.GenerateContentAsync(70);
+
+        result.Should().BeSameAs(expected);
+        geminiMock.Verify(g => g.GenerateProductContentAsync(
+            "iPhone 15 Pro Case",
+            "Phone Accessories",
+            "MagSafe compatible, silicone, shockproof",
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GenerateContent_NotFound_ThrowsNotFoundException()
+    {
+        await using var context = CreateContext();
+        await SeedCategoryAsync(context);
+
+        var geminiMock = new Mock<IGeminiService>();
+        var service = CreateService(context, geminiMock.Object);
+
+        Func<Task> act = async () => await service.GenerateContentAsync(999);
+
+        await act.Should()
+            .ThrowAsync<NotFoundException>()
+            .WithMessage("*Product with id 999 was not found*");
+
+        geminiMock.Verify(g => g.GenerateProductContentAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private static ProductService CreateService(AppDbContext context, IGeminiService? geminiService = null)
     {
         var cacheMock = new Mock<ICacheService>();
 
@@ -287,7 +354,8 @@ public class ProductServiceTests
             context,
             new CreateProductRequestValidator(),
             new UpdateProductRequestValidator(),
-            cacheMock.Object);
+            cacheMock.Object,
+            geminiService ?? Mock.Of<IGeminiService>());
     }
 
     private static AppDbContext CreateContext()

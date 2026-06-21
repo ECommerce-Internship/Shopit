@@ -4,9 +4,8 @@ namespace Shopit.Infrastructure.Services;
 
 public class LowStockAlertServiceStub : ILowStockAlertService
 {
-    public Task TriggerAlertAsync(int productId)
+    public Task SendAlertAsync(int productId, string productName, int currentQty, int threshold)
     {
-        // TODO: SCRUM-47 - implement real alert logic
         return Task.CompletedTask;
     }
 }

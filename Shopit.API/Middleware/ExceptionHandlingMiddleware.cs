@@ -32,6 +32,16 @@ public class ExceptionHandlingMiddleware
             _logger.LogWarning(ex, "Conflict occurred");
             await HandleExceptionAsync(context, ex);
         }
+        catch (ForbiddenException ex)
+        {
+            _logger.LogWarning(ex, "Forbidden access");
+            await HandleExceptionAsync(context, ex);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning(ex, "Validation error");
+            await HandleExceptionAsync(context, ex);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error occurred");

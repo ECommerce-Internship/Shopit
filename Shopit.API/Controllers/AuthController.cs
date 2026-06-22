@@ -1,5 +1,7 @@
 using Asp.Versioning;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Shopit.Application.DTOs.Auth;
@@ -14,6 +16,7 @@ namespace Shopit.API.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
+    private readonly IExternalAuthService _externalAuthService;
     private readonly IValidator<RegisterRequest> _registerValidator;
     private readonly IValidator<LoginRequest> _loginValidator;
     private readonly IValidator<UpdateProfileRequest> _updateProfileValidator;
@@ -21,12 +24,14 @@ public class AuthController : ControllerBase
 
     public AuthController(
         IAuthService authService,
+        IExternalAuthService externalAuthService,
         IValidator<RegisterRequest> registerValidator,
         IValidator<LoginRequest> loginValidator,
         IValidator<UpdateProfileRequest> updateProfileValidator,
         IValidator<ChangePasswordRequest> changePasswordValidator)
     {
         _authService = authService;
+        _externalAuthService = externalAuthService;
         _registerValidator = registerValidator;
         _loginValidator = loginValidator;
         _updateProfileValidator = updateProfileValidator;
@@ -130,5 +135,37 @@ public class AuthController : ControllerBase
     public IActionResult AdminTest()
     {
         return Ok("You have Admin access.");
+    }
+
+    [HttpGet("login/google")]
+    [ProducesResponseType(StatusCodes.Status302Found)]
+    public IActionResult GoogleLogin()
+    {
+        var redirectUri = Url.Action(
+            action: nameof(GoogleCallback),
+            controller: "Auth",
+            values: new { version = "1.0" },
+            protocol: Request.Scheme);
+
+        var properties = new AuthenticationProperties
+        {
+            RedirectUri = redirectUri
+        };
+        return Challenge(properties, GoogleDefaults.AuthenticationScheme);
+    }
+
+    [HttpGet("callback/google")]
+    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GoogleCallback()
+    {
+        var result = await HttpContext.AuthenticateAsync(GoogleDefaults.AuthenticationScheme);
+        if (!result.Succeeded)
+            return Unauthorized("Google authentication failed.");
+
+        var claims = result.Principal!.Claims;
+        var response = await _externalAuthService.HandleCallbackAsync("Google", claims);
+
+        return Ok(response);
     }
 }

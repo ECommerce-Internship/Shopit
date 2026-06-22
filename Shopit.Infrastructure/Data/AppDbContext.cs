@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Review> Reviews => Set<Review>();
+    public DbSet<UserExternalLogin> UserExternalLogins => Set<UserExternalLogin>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -47,6 +48,15 @@ public class AppDbContext : DbContext
             .HasOne(rt => rt.User)
             .WithMany(u => u.RefreshTokens)
             .HasForeignKey(rt => rt.UserId);
+
+        // User -> ExternalLogins (one-to-many)
+        modelBuilder.Entity<UserExternalLogin>()
+            .HasOne(el => el.User)
+            .WithMany(u => u.ExternalLogins)
+            .HasForeignKey(el => el.UserId);
+
+        modelBuilder.Entity<UserExternalLogin>()
+            .HasIndex(el => new { el.Provider, el.ProviderUserId }).IsUnique();
 
         // Category self-referencing (parent -> subcategories)
         modelBuilder.Entity<Category>()

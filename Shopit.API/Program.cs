@@ -2,7 +2,7 @@ using Asp.Versioning;
 using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
 using FluentValidation;
-using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -117,11 +117,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 Encoding.UTF8.GetBytes(jwtSettings["SecretKey"]!))
         };
     })
+    .AddCookie()
     .AddGoogle(options =>
     {
         options.ClientId = builder.Configuration["Authentication:Google:ClientId"]!;
         options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"]!;
         options.CallbackPath = "/signin-google";
+        options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
     });
 
 builder.Services.AddAuthorization();
@@ -135,8 +137,9 @@ var queueName = builder.Configuration["Azure:LowStockQueueName"]!;
 builder.Services.AddSingleton(new QueueClient(storageConnectionString, queueName));
 
 // Redis
-builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
-    ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));
+var redisConnection = builder.Configuration.GetConnectionString("Redis")!;
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    ConnectionMultiplexer.Connect(redisConnection + ",abortConnect=false"));
 
 // Azure Blob Storage
 var blobConnection = builder.Configuration.GetConnectionString("AzureBlobStorage")!;
@@ -155,39 +158,8 @@ builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICacheService, CacheService>();
 builder.Services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
-builder.Services.AddScoped<IPaymentService, PaymentService>();
-builder.Services.AddScoped<IReviewService, ReviewService>();
-
-// Gemini AI content generation
-builder.Services.AddHttpClient("GeminiClient", client =>
-{
-    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
-    client.Timeout = TimeSpan.FromSeconds(30);
-});
-builder.Services.AddScoped<IGeminiService, GeminiService>();
-
-// Rate limiting for the AI content-generation endpoints: 10 requests/minute,
-// partitioned by the authenticated user (falling back to remote IP). Rejected
-// requests return 429.
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy("GeminiContentGeneration", httpContext =>
-    {
-        var userId = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var partitionKey = !string.IsNullOrEmpty(userId)
-            ? $"user:{userId}"
-            : $"ip:{httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"}";
-
-        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = 10,
-            Window = TimeSpan.FromMinutes(1),
-            QueueLimit = 0,
-            QueueProcessingOrder = QueueProcessingOrder.OldestFirst
-        });
-    });
-});
+builder.Services.AddScoped<IExternalAuthService, ExternalAuthService>();
+builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 builder.Services.AddCors(options =>
 {

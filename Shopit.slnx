@@ -1,7 +1,11 @@
 <Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ECommerce.MCP/ECommerce.MCP.csproj" />
+  </Folder>
   <Project Path="Shopit.API/Shopit.API.csproj" />
   <Project Path="Shopit.Application/Shopit.Application.csproj" />
   <Project Path="Shopit.Domain/Shopit.Domain.csproj" />
   <Project Path="Shopit.Infrastructure/Shopit.Infrastructure.csproj" />
+  <Project Path="Shopit.MCP/Shopit.MCP.csproj" />
   <Project Path="Shopit.Tests/Shopit.Tests.csproj" />
 </Solution>

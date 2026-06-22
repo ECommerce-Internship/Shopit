@@ -10,6 +10,7 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="FluentAssertions" Version="8.10.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.9" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.9" />
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
@@ -21,6 +22,7 @@
     <ProjectReference Include="..\Shopit.Infrastructure\Shopit.Infrastructure.csproj" />
     <ProjectReference Include="..\Shopit.Application\Shopit.Application.csproj" />
     <ProjectReference Include="..\Shopit.Domain\Shopit.Domain.csproj" />
+    <ProjectReference Include="..\Shopit.API\Shopit.API.csproj" />
   </ItemGroup>
 
   <ItemGroup>

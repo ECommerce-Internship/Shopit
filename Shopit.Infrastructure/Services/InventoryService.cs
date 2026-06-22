@@ -4,6 +4,7 @@ using Shopit.Application.Interfaces;
 using Shopit.Domain.Entities;
 using Shopit.Domain.Exceptions;
 using Shopit.Infrastructure.Data;
+using Serilog;
 
 namespace Shopit.Infrastructure.Services;
 
@@ -40,25 +41,39 @@ public class InventoryService : IInventoryService
         return MapToResponse(inventory);
     }
 
-    public async Task<InventoryResponse> UpdateStockAsync(int productId, int quantity)
+   public async Task<InventoryResponse> UpdateStockAsync(int productId, int quantity)
+{
+    var inventory = await _context.Inventories
+        .Include(i => i.Product)
+        .FirstOrDefaultAsync(i => i.ProductId == productId && !i.Product.IsDeleted);
+
+    if (inventory == null)
+        throw new NotFoundException($"Inventory for product with ID {productId} was not found.");
+
+    inventory.Quantity = quantity;
+    inventory.UpdatedAt = DateTime.UtcNow;
+    await _context.SaveChangesAsync();
+
+    try
     {
-        var inventory = await _context.Inventories
-            .Include(i => i.Product)
-            .FirstOrDefaultAsync(i => i.ProductId == productId && !i.Product.IsDeleted);
-
-        if (inventory == null)
-            throw new NotFoundException($"Inventory for product with ID {productId} was not found.");
-
-        inventory.Quantity = quantity;
-        inventory.UpdatedAt = DateTime.UtcNow;
-
-        await _context.SaveChangesAsync();
-
-        if (inventory.Quantity <= inventory.LowStockThreshold)
-            await _lowStockAlertService.TriggerAlertAsync(productId);
-
-        return MapToResponse(inventory);
+        if (quantity <= inventory.LowStockThreshold)
+        {
+            Log.Warning("Low stock triggered for {ProductName} - Qty: {Qty}, Threshold: {Threshold}",
+                inventory.Product.Name, quantity, inventory.LowStockThreshold);
+            await _lowStockAlertService.SendAlertAsync(
+                inventory.ProductId,
+                inventory.Product.Name,
+                quantity,
+                inventory.LowStockThreshold);
+        }
     }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Failed in low stock check for product {ProductId}", productId);
+    }
+
+    return MapToResponse(inventory);
+}
 
     public async Task<IEnumerable<InventoryResponse>> GetLowStockAsync()
     {

@@ -32,6 +32,16 @@ public class ExceptionHandlingMiddleware
             _logger.LogWarning(ex, "Conflict occurred");
             await HandleExceptionAsync(context, ex);
         }
+        catch (ForbiddenException ex)
+        {
+            _logger.LogWarning(ex, "Forbidden access");
+            await HandleExceptionAsync(context, ex);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning(ex, "Validation error");
+            await HandleExceptionAsync(context, ex);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error occurred");
@@ -48,6 +58,7 @@ public class ExceptionHandlingMiddleware
             ValidationException => (400, "Bad Request"),
             UnauthorizedException => (401, "Unauthorized"),
             ForbiddenException => (403, "Forbidden"),
+            ExternalServiceException => (502, "Bad Gateway"),
             _ => (500, "Internal Server Error")
         };
 

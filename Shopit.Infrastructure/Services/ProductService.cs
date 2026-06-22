@@ -3,6 +3,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using OfficeOpenXml;
+using Shopit.Application.AI;
 using Shopit.Application.Common;
 using Shopit.Application.Interfaces;
 using Shopit.Application.Products;
@@ -21,17 +22,39 @@ public class ProductService : IProductService
     private readonly IValidator<CreateProductRequest> _createValidator;
     private readonly IValidator<UpdateProductRequest> _updateValidator;
     private readonly ICacheService _cache;
+    private readonly IGeminiService _geminiService;
 
     public ProductService(
         AppDbContext context,
         IValidator<CreateProductRequest> createValidator,
         IValidator<UpdateProductRequest> updateValidator,
-        ICacheService cache)
+        ICacheService cache,
+        IGeminiService geminiService)
     {
         _context = context;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
         _cache = cache;
+        _geminiService = geminiService;
+    }
+
+    public async Task<ProductContentResponse> GenerateContentAsync(int id, CancellationToken cancellationToken = default)
+    {
+        // Non-saving path: read the product without tracking and ask Gemini for
+        // content suggestions. Nothing is persisted here.
+        var product = await _context.Products
+            .AsNoTracking()
+            .Include(p => p.Category)
+            .FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted, cancellationToken);
+
+        if (product is null)
+            throw new NotFoundException($"Product with id {id} was not found.");
+
+        return await _geminiService.GenerateProductContentAsync(
+            product.Name,
+            product.Category.Name,
+            product.Description ?? string.Empty,
+            cancellationToken);
     }
 
     public async Task<PaginatedResult<ProductResponse>> GetAllAsync(ProductQueryParameters queryParameters)

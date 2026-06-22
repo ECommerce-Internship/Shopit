@@ -2,5 +2,5 @@ namespace Shopit.Application.Interfaces;
 
 public interface ILowStockAlertService
 {
-    Task TriggerAlertAsync(int productId);
+    Task SendAlertAsync(int productId, string productName, int currentQty, int threshold);
 }

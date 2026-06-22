@@ -1,5 +1,6 @@
 using Asp.Versioning;
 using Azure.Storage.Blobs;
+using Azure.Storage.Queues;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
@@ -7,18 +8,38 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using OfficeOpenXml;
+using Serilog;
+using Serilog.Events;
 using Shopit.API.Middleware;
+using Shopit.Application.AI;
 using Shopit.Application.Interfaces;
 using Shopit.Application.Products;
 using Shopit.Application.Validators;
 using Shopit.Infrastructure.Data;
 using Shopit.Infrastructure.Repositories;
 using Shopit.Infrastructure.Services;
+using Shopit.Infrastructure.Workers;
 using StackExchange.Redis;
 using System.Reflection;
+using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
+
+ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((context, config) =>
+{
+    config
+        .MinimumLevel.Information()
+        .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+        .Enrich.FromLogContext()
+        .Enrich.WithMachineName()
+        .WriteTo.Console()
+        .WriteTo.Seq(context.Configuration["Seq:ServerUrl"]!);
+});
 
 const string DevelopmentCorsPolicy = "DevelopmentCorsPolicy";
 
@@ -110,6 +131,11 @@ builder.Services.AddAuthorization();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// Azure Queue for low stock alerts
+var storageConnectionString = builder.Configuration["Azure:StorageConnectionString"]!;
+var queueName = builder.Configuration["Azure:LowStockQueueName"]!;
+builder.Services.AddSingleton(new QueueClient(storageConnectionString, queueName));
+
 // Redis
 var redisConnection = builder.Configuration.GetConnectionString("Redis")!;
 builder.Services.AddSingleton<IConnectionMultiplexer>(
@@ -122,10 +148,10 @@ builder.Services.AddSingleton(new BlobServiceClient(blobConnection));
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
-builder.Services.AddScoped<ILowStockAlertService, LowStockAlertServiceStub>();
+builder.Services.AddScoped<ILowStockAlertService, LowStockAlertService>();
 builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
-builder.Services.AddScoped<IEmailService, EmailServiceStub>();
+builder.Services.AddScoped<IEmailService, SendGridEmailService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
@@ -145,6 +171,27 @@ builder.Services.AddCors(options =>
     });
 });
 
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
+builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddScoped<ILowStockAlertService, LowStockAlertService>();
+builder.Services.AddScoped<ICartService, CartService>();
+builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
+builder.Services.AddScoped<ICacheService, CacheService>();
+builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddScoped<IPaymentService, PaymentService>();
+builder.Services.AddScoped<IEmailService, SendGridEmailService>();
+builder.Services.AddScoped<IReviewService, ReviewService>();
+
+builder.Services.AddFluentValidationAutoValidation();
+builder.Services.AddValidatorsFromAssembly(typeof(RegisterRequestValidator).Assembly);
+builder.Services.AddValidatorsFromAssembly(typeof(CreateCategoryRequestValidator).Assembly);
+builder.Services.AddValidatorsFromAssembly(typeof(IProductService).Assembly);
+
+builder.Services.AddHostedService<LowStockWorker>();
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -169,5 +216,6 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.MapControllers();
 app.Run();

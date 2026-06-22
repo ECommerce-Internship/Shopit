@@ -13,17 +13,18 @@ using Microsoft.Extensions.Logging;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Database
+// Configuration
+var config = builder.Configuration;
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer("Server=localhost\\SQLEXPRESS;Database=ShopitDb;Trusted_Connection=True;TrustServerCertificate=True;"));
+    options.UseSqlServer(config["ConnectionStrings:DefaultConnection"]));
 
-// Redis
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
-    ConnectionMultiplexer.Connect("localhost:6379"));
+    ConnectionMultiplexer.Connect(config["ConnectionStrings:Redis"]!));
 
-// Azure Queue
 builder.Services.AddSingleton(new QueueClient(
-    "UseDevelopmentStorage=true", "low-stock-alerts"));
+    config["ConnectionStrings:AzureQueue"],
+    config["AzureQueue:QueueName"]));
 
 // Services
 builder.Services.AddScoped<IProductService, ProductService>();

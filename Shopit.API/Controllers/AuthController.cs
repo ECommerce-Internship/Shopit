@@ -155,17 +155,36 @@ public class AuthController : ControllerBase
     }
 
     [HttpGet("callback/google")]
-    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status302Found)]
     public async Task<IActionResult> GoogleCallback()
     {
+        var frontendBaseUrl = "http://localhost:5173"; // TODO: move to configuration once a staging/prod frontend URL exists
+
         var result = await HttpContext.AuthenticateAsync(GoogleDefaults.AuthenticationScheme);
         if (!result.Succeeded)
-            return Unauthorized("Google authentication failed.");
+            return Redirect($"{frontendBaseUrl}/auth/google/callback?error=Google+authentication+failed");
 
         var claims = result.Principal!.Claims;
-        var response = await _externalAuthService.HandleCallbackAsync("Google", claims);
 
-        return Ok(response);
+        try
+        {
+            var response = await _externalAuthService.HandleCallbackAsync("Google", claims);
+            var redirectUrl =
+                $"{frontendBaseUrl}/auth/google/callback" +
+                $"?accessToken={Uri.EscapeDataString(response.AccessToken)}" +
+                $"&refreshToken={Uri.EscapeDataString(response.RefreshToken)}" +
+                $"&expiresIn={response.ExpiresIn}" +
+                $"&userId={response.User.Id}" +
+                $"&email={Uri.EscapeDataString(response.User.Email)}" +
+                $"&firstName={Uri.EscapeDataString(response.User.FirstName)}" +
+                $"&lastName={Uri.EscapeDataString(response.User.LastName)}" +
+                $"&role={Uri.EscapeDataString(response.User.Role)}";
+
+            return Redirect(redirectUrl);
+        }
+        catch (Exception)
+        {
+            return Redirect($"{frontendBaseUrl}/auth/google/callback?error=Something+went+wrong");
+        }
     }
 }

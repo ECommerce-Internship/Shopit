@@ -20,7 +20,7 @@ var builder = Host.CreateApplicationBuilder(args);
 var config = builder.Configuration;
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(config["ConnectionStrings:DefaultConnection"]));
+    options.UseNpgsql(config["ConnectionStrings:DefaultConnection"]));
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     ConnectionMultiplexer.Connect(config["ConnectionStrings:Redis"]!));

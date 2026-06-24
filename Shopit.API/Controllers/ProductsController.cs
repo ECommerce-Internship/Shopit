@@ -25,11 +25,16 @@ public class ProductsController : ControllerBase
 
     private readonly IProductService _productService;
     private readonly IBlobStorageService _blobStorageService;
+    private readonly ISftpProductImportService _sftpProductImportService;
 
-    public ProductsController(IProductService productService, IBlobStorageService blobStorageService)
+    public ProductsController(
+        IProductService productService,
+        IBlobStorageService blobStorageService,
+        ISftpProductImportService sftpProductImportService)
     {
         _productService = productService;
         _blobStorageService = blobStorageService;
+        _sftpProductImportService = sftpProductImportService;
     }
 
     /// <summary>
@@ -101,6 +106,25 @@ public class ProductsController : ControllerBase
 
         using var stream = file.OpenReadStream();
         var result = await _productService.ImportAsync(stream, cancellationToken);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Imports products from the Excel file hosted on the configured SFTP server.
+    /// Downloads the file over SFTP and runs it through the same import pipeline as
+    /// <see cref="Import"/>. Returns 502 if the SFTP server is unreachable and 404 if
+    /// the configured file does not exist.
+    /// </summary>
+    [HttpPost("import-from-sftp")]
+    //[Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ImportResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<ImportResultDto>> ImportFromSftp(CancellationToken cancellationToken)
+    {
+        var result = await _sftpProductImportService.ImportProductsFromSftpAsync(cancellationToken);
 
         return Ok(result);
     }

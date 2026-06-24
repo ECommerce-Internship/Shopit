@@ -9,6 +9,9 @@
 # Local development app settings
 appsettings.Development.json
 
+# Local SFTP server files (mounted into the dev sftp container)
+sftp-files/
+
 # User-specific files
 *.rsuser
 *.suo

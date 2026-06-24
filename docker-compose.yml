@@ -28,3 +28,14 @@ services:
       - "10000:10000"
       - "10001:10001"
       - "10002:10002"
+
+  sftp:
+    image: atmoz/sftp
+    container_name: sftp
+    ports:
+      - "2222:22"
+    volumes:
+      - ./sftp-files:/home/testuser/upload
+    command: testuser:testpass:::upload
+    profiles:
+      - dev

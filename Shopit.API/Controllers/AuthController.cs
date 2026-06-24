@@ -1,5 +1,7 @@
 using Asp.Versioning;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Shopit.Application.DTOs.Auth;
@@ -14,6 +16,7 @@ namespace Shopit.API.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
+    private readonly IExternalAuthService _externalAuthService;
     private readonly IValidator<RegisterRequest> _registerValidator;
     private readonly IValidator<LoginRequest> _loginValidator;
     private readonly IValidator<UpdateProfileRequest> _updateProfileValidator;
@@ -21,12 +24,14 @@ public class AuthController : ControllerBase
 
     public AuthController(
         IAuthService authService,
+        IExternalAuthService externalAuthService,
         IValidator<RegisterRequest> registerValidator,
         IValidator<LoginRequest> loginValidator,
         IValidator<UpdateProfileRequest> updateProfileValidator,
         IValidator<ChangePasswordRequest> changePasswordValidator)
     {
         _authService = authService;
+        _externalAuthService = externalAuthService;
         _registerValidator = registerValidator;
         _loginValidator = loginValidator;
         _updateProfileValidator = updateProfileValidator;
@@ -130,5 +135,56 @@ public class AuthController : ControllerBase
     public IActionResult AdminTest()
     {
         return Ok("You have Admin access.");
+    }
+
+    [HttpGet("login/google")]
+    [ProducesResponseType(StatusCodes.Status302Found)]
+    public IActionResult GoogleLogin()
+    {
+        var redirectUri = Url.Action(
+            action: nameof(GoogleCallback),
+            controller: "Auth",
+            values: new { version = "1.0" },
+            protocol: Request.Scheme);
+
+        var properties = new AuthenticationProperties
+        {
+            RedirectUri = redirectUri
+        };
+        return Challenge(properties, GoogleDefaults.AuthenticationScheme);
+    }
+
+    [HttpGet("callback/google")]
+    [ProducesResponseType(StatusCodes.Status302Found)]
+    public async Task<IActionResult> GoogleCallback()
+    {
+        var frontendBaseUrl = "http://localhost:5173"; // TODO: move to configuration once a staging/prod frontend URL exists
+
+        var result = await HttpContext.AuthenticateAsync(GoogleDefaults.AuthenticationScheme);
+        if (!result.Succeeded)
+            return Redirect($"{frontendBaseUrl}/auth/google/callback?error=Google+authentication+failed");
+
+        var claims = result.Principal!.Claims;
+
+        try
+        {
+            var response = await _externalAuthService.HandleCallbackAsync("Google", claims);
+            var redirectUrl =
+                $"{frontendBaseUrl}/auth/google/callback" +
+                $"?accessToken={Uri.EscapeDataString(response.AccessToken)}" +
+                $"&refreshToken={Uri.EscapeDataString(response.RefreshToken)}" +
+                $"&expiresIn={response.ExpiresIn}" +
+                $"&userId={response.User.Id}" +
+                $"&email={Uri.EscapeDataString(response.User.Email)}" +
+                $"&firstName={Uri.EscapeDataString(response.User.FirstName)}" +
+                $"&lastName={Uri.EscapeDataString(response.User.LastName)}" +
+                $"&role={Uri.EscapeDataString(response.User.Role)}";
+
+            return Redirect(redirectUrl);
+        }
+        catch (Exception)
+        {
+            return Redirect($"{frontendBaseUrl}/auth/google/callback?error=Something+went+wrong");
+        }
     }
 }

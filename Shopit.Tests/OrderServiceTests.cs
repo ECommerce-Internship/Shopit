@@ -58,7 +58,7 @@ public class OrderServiceTests
             SKU = "PHONE-001",
             Price = 699.99m,
             CategoryId = category.Id,
-            Inventory = new Inventory { Quantity = 10, LowStockThreshold = 2, RowVersion = new byte[8] }
+            Inventory = new Inventory { Quantity = 10, LowStockThreshold = 2 }
         };
 
         var product2 = new Product
@@ -67,7 +67,7 @@ public class OrderServiceTests
             SKU = "SHIRT-001",
             Price = 29.99m,
             CategoryId = category.Id,
-            Inventory = new Inventory { Quantity = 5, LowStockThreshold = 1, RowVersion = new byte[8] }
+            Inventory = new Inventory { Quantity = 5, LowStockThreshold = 1}
         };
 
         db.Products.AddRange(product1, product2);

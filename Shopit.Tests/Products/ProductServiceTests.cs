@@ -120,7 +120,6 @@ public class ProductServiceTests
                 Id = 30,
                 Quantity = 40,
                 UpdatedAt = DateTime.UtcNow,
-                RowVersion = new byte[8]
             }
         };
 

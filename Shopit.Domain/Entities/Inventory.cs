@@ -10,6 +10,6 @@ public class Inventory
     public int ProductId { get; set; }
     public Product Product { get; set; } = null!;
 
-    [System.ComponentModel.DataAnnotations.Timestamp]
-    public byte[] RowVersion { get; set; } = null!;
+    public uint Version { get; set; }
+
 }

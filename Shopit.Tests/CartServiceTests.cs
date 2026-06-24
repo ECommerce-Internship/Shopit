@@ -34,7 +34,7 @@ public class CartServiceTests
             SKU = "TEST-001",
             Price = 99.99m,
             CategoryId = category.Id,
-            Inventory = new Inventory { Quantity = stock, LowStockThreshold = 2, RowVersion = new byte[8] }
+            Inventory = new Inventory { Quantity = stock, LowStockThreshold = 2}
         };
         db.Products.Add(product);
 

@@ -229,8 +229,7 @@ public class ProductService : IProductService
             Inventory = new Inventory
             {
                 Quantity = request.InitialStock,
-                UpdatedAt = DateTime.UtcNow,
-                RowVersion = new byte[8]
+                UpdatedAt = DateTime.UtcNow
             }
         };
 
@@ -281,8 +280,7 @@ public class ProductService : IProductService
             {
                 ProductId = product.Id,
                 Quantity = request.StockQuantity,
-                UpdatedAt = DateTime.UtcNow,
-                RowVersion = new byte[8]
+                UpdatedAt = DateTime.UtcNow
             };
         }
         else
@@ -458,8 +456,7 @@ public class ProductService : IProductService
             {
                 Product = product,
                 Quantity = initialStock,
-                UpdatedAt = now,
-                RowVersion = new byte[8]
+                UpdatedAt = now
             };
 
             product.Inventory = inventory;

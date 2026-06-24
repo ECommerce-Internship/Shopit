@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Shopit.Domain.Entities;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 namespace Shopit.Infrastructure.Data;
 
@@ -71,15 +72,15 @@ public class AppDbContext : DbContext
             .WithMany(c => c.Products)
             .HasForeignKey(p => p.CategoryId);
 
+        modelBuilder.Entity<Inventory>()
+        .Property(i => i.Version)
+        .IsConcurrencyToken();
+
         // Product <-> Inventory (one-to-one)
         modelBuilder.Entity<Inventory>()
             .HasOne(i => i.Product)
             .WithOne(p => p.Inventory)
             .HasForeignKey<Inventory>(i => i.ProductId);
-
-        modelBuilder.Entity<Inventory>()
-            .Property(i => i.RowVersion)
-            .IsRowVersion();
 
         // Cart -> CartItems (one-to-many)
         modelBuilder.Entity<CartItem>()

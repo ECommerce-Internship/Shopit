@@ -130,8 +130,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    
 // Azure Queue for low stock alerts
 var storageConnectionString = builder.Configuration["Azure:StorageConnectionString"]!;
 var queueName = builder.Configuration["Azure:LowStockQueueName"]!;

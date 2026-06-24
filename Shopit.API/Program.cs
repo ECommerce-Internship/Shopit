@@ -17,6 +17,7 @@ using Shopit.Application.AI;
 using Shopit.Application.Interfaces;
 using Shopit.Application.Products;
 using Shopit.Application.Validators;
+using Shopit.Infrastructure.Configuration;
 using Shopit.Infrastructure.Data;
 using Shopit.Infrastructure.Repositories;
 using Shopit.Infrastructure.Services;
@@ -148,6 +149,9 @@ builder.Services.AddSingleton(new BlobServiceClient(blobConnection));
 
 builder.Services.AddHttpClient();
 
+// SFTP product import settings (Host, Port, Username, Password, FilePath).
+builder.Services.Configure<SftpSettings>(builder.Configuration.GetSection(SftpSettings.SectionName));
+
 builder.Services.AddRateLimiter(options =>
 {
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
@@ -171,6 +175,7 @@ builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddScoped<ISftpProductImportService, SftpProductImportService>();
 builder.Services.AddScoped<ICacheService, CacheService>();
 builder.Services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
 builder.Services.AddScoped<IExternalAuthService, ExternalAuthService>();

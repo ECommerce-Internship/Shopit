@@ -19,22 +19,6 @@ public static class DbInitializer
         context.Categories.AddRange(categories);
         context.SaveChanges();
 
-        var products = new List<Product>
-        {
-            new() { Name = "Laptop", SKU = "ELEC-001", Price = 999.99m, CategoryId = categories[0].Id,
-                Inventory = new Inventory { Quantity = 25, LowStockThreshold = 5 } },
-            new() { Name = "Phone", SKU = "ELEC-002", Price = 699.99m, CategoryId = categories[0].Id,
-                Inventory = new Inventory { Quantity = 120, LowStockThreshold = 10 } },
-            new() { Name = "T-Shirt", SKU = "CLTH-001", Price = 29.99m, CategoryId = categories[1].Id,
-                Inventory = new Inventory { Quantity = 200, LowStockThreshold = 20 } },
-            new() { Name = "Jeans", SKU = "CLTH-002", Price = 59.99m, CategoryId = categories[1].Id,
-                Inventory = new Inventory { Quantity = 80, LowStockThreshold = 10 } },
-            new() { Name = "C# Programming", SKU = "BOOK-001", Price = 39.99m, CategoryId = categories[2].Id,
-                Inventory = new Inventory { Quantity = 50, LowStockThreshold = 5 } },
-        };
-
-        context.Products.AddRange(products);
-
         var admin = new User
         {
             FirstName = "Admin",
@@ -45,6 +29,35 @@ public static class DbInitializer
         };
 
         context.Users.Add(admin);
+        context.SaveChanges();
+
+        var store = new Store
+        {
+            Name = "Shopit Platform Store",
+            Slug = "platform",
+            Status = StoreStatus.Approved,
+            CommissionRate = 0,
+            OwnerUserId = admin.Id
+        };
+
+        context.Stores.Add(store);
+        context.SaveChanges();
+
+        var products = new List<Product>
+        {
+            new() { Name = "Laptop", SKU = "ELEC-001", Price = 999.99m, CategoryId = categories[0].Id, StoreId = store.Id,
+                Inventory = new Inventory { Quantity = 25, LowStockThreshold = 5 } },
+            new() { Name = "Phone", SKU = "ELEC-002", Price = 699.99m, CategoryId = categories[0].Id, StoreId = store.Id,
+                Inventory = new Inventory { Quantity = 120, LowStockThreshold = 10 } },
+            new() { Name = "T-Shirt", SKU = "CLTH-001", Price = 29.99m, CategoryId = categories[1].Id, StoreId = store.Id,
+                Inventory = new Inventory { Quantity = 200, LowStockThreshold = 20 } },
+            new() { Name = "Jeans", SKU = "CLTH-002", Price = 59.99m, CategoryId = categories[1].Id, StoreId = store.Id,
+                Inventory = new Inventory { Quantity = 80, LowStockThreshold = 10 } },
+            new() { Name = "C# Programming", SKU = "BOOK-001", Price = 39.99m, CategoryId = categories[2].Id, StoreId = store.Id,
+                Inventory = new Inventory { Quantity = 50, LowStockThreshold = 5 } },
+        };
+
+        context.Products.AddRange(products);
 
         var coupon = new Coupon
         {

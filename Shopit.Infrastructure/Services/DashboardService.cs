@@ -137,15 +137,15 @@ public class DashboardService : IDashboardService
         if (cached.HasValue)
             return JsonSerializer.Deserialize<IEnumerable<TopProductResponse>>(cached.ToString())!;
 
-        var result = await _context.OrderItems
-            .Include(oi => oi.Product)
-            .GroupBy(oi => new { oi.ProductId, oi.Product.Name })
+        var result = await _context.StoreOrderItems
+            .Include(soi => soi.Product)
+            .GroupBy(soi => new { soi.ProductId, soi.Product.Name })
             .Select(g => new TopProductResponse
             {
                 ProductId = g.Key.ProductId,
                 ProductName = g.Key.Name,
-                UnitsSold = g.Sum(oi => oi.Quantity),
-                Revenue = g.Sum(oi => oi.Quantity * oi.UnitPrice)
+                UnitsSold = g.Sum(soi => soi.Quantity),
+                Revenue = g.Sum(soi => soi.Quantity * soi.UnitPrice)
             })
             .OrderByDescending(x => x.UnitsSold)
             .Take(10)
@@ -228,8 +228,8 @@ public class DashboardService : IDashboardService
         if (cached.HasValue)
             return JsonSerializer.Deserialize<IEnumerable<OrdersByStatusResponse>>(cached.ToString())!;
 
-        var result = await _context.Orders
-            .GroupBy(o => o.Status)
+        var result = await _context.StoreOrders
+            .GroupBy(so => so.Status)
             .Select(g => new OrdersByStatusResponse
             {
                 Status = g.Key.ToString(),

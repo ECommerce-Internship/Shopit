@@ -46,31 +46,10 @@ public class OrderServiceTests
         return factoryMock.Object;
     }
 
-    private async Task<(AppDbContext db, User user, Product product1, Product product2)> SeedData(AppDbContext db)
+    private async Task<(AppDbContext db, User user, Product product1, Product product2, Store store)> SeedData(AppDbContext db)
     {
         var category = new Category { Name = "Test", Slug = "test" };
         db.Categories.Add(category);
-        await db.SaveChangesAsync();
-
-        var product1 = new Product
-        {
-            Name = "Phone",
-            SKU = "PHONE-001",
-            Price = 699.99m,
-            CategoryId = category.Id,
-            Inventory = new Inventory { Quantity = 10, LowStockThreshold = 2 }
-        };
-
-        var product2 = new Product
-        {
-            Name = "T-Shirt",
-            SKU = "SHIRT-001",
-            Price = 29.99m,
-            CategoryId = category.Id,
-            Inventory = new Inventory { Quantity = 5, LowStockThreshold = 1}
-        };
-
-        db.Products.AddRange(product1, product2);
 
         var user = new User
         {
@@ -83,7 +62,41 @@ public class OrderServiceTests
         db.Users.Add(user);
         await db.SaveChangesAsync();
 
-        return (db, user, product1, product2);
+        var store = new Store
+        {
+            Name = "Test Store",
+            Slug = "test-store",
+            Status = StoreStatus.Approved,
+            CommissionRate = 0,
+            OwnerUserId = user.Id
+        };
+        db.Stores.Add(store);
+        await db.SaveChangesAsync();
+
+        var product1 = new Product
+        {
+            Name = "Phone",
+            SKU = "PHONE-001",
+            Price = 699.99m,
+            CategoryId = category.Id,
+            StoreId = store.Id,
+            Inventory = new Inventory { Quantity = 10, LowStockThreshold = 2 }
+        };
+
+        var product2 = new Product
+        {
+            Name = "T-Shirt",
+            SKU = "SHIRT-001",
+            Price = 29.99m,
+            CategoryId = category.Id,
+            StoreId = store.Id,
+            Inventory = new Inventory { Quantity = 5, LowStockThreshold = 1 }
+        };
+
+        db.Products.AddRange(product1, product2);
+        await db.SaveChangesAsync();
+
+        return (db, user, product1, product2, store);
     }
 
     private async Task<Cart> CreateCartWithItems(AppDbContext db, int userId, List<(int productId, int quantity)> items)
@@ -110,7 +123,7 @@ public class OrderServiceTests
     public async Task PlaceOrderAsync_ValidCart_CreatesOrderAndDeductsInventory()
     {
         var db = CreateDb();
-        var (_, user, product1, product2) = await SeedData(db);
+        var (_, user, product1, product2, _) = await SeedData(db);
 
         await CreateCartWithItems(db, user.Id, new List<(int, int)>
         {
@@ -142,10 +155,73 @@ public class OrderServiceTests
     }
 
     [Fact]
+    public async Task PlaceOrderAsync_ValidCart_CreatesSingleStoreOrderForProductStore()
+    {
+        var db = CreateDb();
+        var (_, user, product1, product2, store) = await SeedData(db);
+
+        await CreateCartWithItems(db, user.Id, new List<(int, int)>
+        {
+            (product1.Id, 2),
+            (product2.Id, 1)
+        });
+
+        var emailService = CreateEmailServiceStub();
+        var service = new OrderService(db, emailService, CreateScopeFactoryStub(emailService));
+
+        var result = await service.PlaceOrderAsync(user.Id, new PlaceOrderRequest
+        {
+            ShippingAddress = "123 Test St"
+        });
+
+        var storeOrders = await db.StoreOrders
+            .Where(so => so.OrderId == result.Id)
+            .ToListAsync();
+
+        storeOrders.Should().HaveCount(1);
+        storeOrders[0].StoreId.Should().Be(store.Id);
+        storeOrders[0].Status.Should().Be(OrderStatus.Pending);
+        storeOrders[0].SubTotal.Should().Be((699.99m * 2) + (29.99m * 1));
+
+        var storeOrderItems = await db.StoreOrderItems
+            .Where(soi => soi.StoreOrderId == storeOrders[0].Id)
+            .ToListAsync();
+
+        storeOrderItems.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task PlaceOrderAsync_ValidCart_StoreOrderItemsCaptureSnapshot()
+    {
+        var db = CreateDb();
+        var (_, user, product1, _, _) = await SeedData(db);
+
+        await CreateCartWithItems(db, user.Id, new List<(int, int)>
+        {
+            (product1.Id, 3)
+        });
+
+        var emailService = CreateEmailServiceStub();
+        var service = new OrderService(db, emailService, CreateScopeFactoryStub(emailService));
+
+        var result = await service.PlaceOrderAsync(user.Id, new PlaceOrderRequest
+        {
+            ShippingAddress = "123 Test St"
+        });
+
+        var item = await db.StoreOrderItems.SingleAsync();
+        item.ProductId.Should().Be(product1.Id);
+        item.ProductNameSnapshot.Should().Be(product1.Name);
+        item.UnitPrice.Should().Be(product1.Price);
+        item.Quantity.Should().Be(3);
+        item.Subtotal.Should().Be(product1.Price * 3);
+    }
+
+    [Fact]
     public async Task PlaceOrderAsync_EmptyCart_ThrowsValidationException()
     {
         var db = CreateDb();
-        var (_, user, _, _) = await SeedData(db);
+        var (_, user, _, _, _) = await SeedData(db);
 
         var emailService = CreateEmailServiceStub();
         var service = new OrderService(db, emailService, CreateScopeFactoryStub(emailService));
@@ -163,7 +239,7 @@ public class OrderServiceTests
     public async Task PlaceOrderAsync_ItemOutOfStock_ThrowsValidationExceptionWithProductName()
     {
         var db = CreateDb();
-        var (_, user, product1, _) = await SeedData(db);
+        var (_, user, product1, _, _) = await SeedData(db);
 
         await CreateCartWithItems(db, user.Id, new List<(int, int)>
         {
@@ -186,7 +262,7 @@ public class OrderServiceTests
     public async Task CancelOrderAsync_PendingStatus_SetsStatusCancelled()
     {
         var db = CreateDb();
-        var (_, user, product1, _) = await SeedData(db);
+        var (_, user, product1, _, _) = await SeedData(db);
 
         await CreateCartWithItems(db, user.Id, new List<(int, int)>
         {
@@ -211,16 +287,25 @@ public class OrderServiceTests
     public async Task CancelOrderAsync_NonPendingStatus_ThrowsValidationException()
     {
         var db = CreateDb();
-        var (_, user, _, _) = await SeedData(db);
+        var (_, user, _, _, store) = await SeedData(db);
 
         var order = new Order
         {
             UserId = user.Id,
-            Status = OrderStatus.Processing,
             TotalAmount = 699.99m,
             ShippingAddress = "123 Test St"
         };
         db.Orders.Add(order);
+        await db.SaveChangesAsync();
+
+        db.StoreOrders.Add(new StoreOrder
+        {
+            OrderId = order.Id,
+            StoreId = store.Id,
+            Status = OrderStatus.Processing,
+            SubTotal = 699.99m,
+            SellerNetAmount = 699.99m
+        });
         await db.SaveChangesAsync();
 
         var emailService = CreateEmailServiceStub();

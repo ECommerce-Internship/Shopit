@@ -66,7 +66,6 @@ public class OrderService : IOrderService
             var order = new Order
             {
                 UserId = userId,
-                Status = OrderStatus.Pending,
                 TotalAmount = totalAmount,
                 DiscountAmount = discountAmount,
                 ShippingAddress = request.ShippingAddress,
@@ -77,21 +76,33 @@ public class OrderService : IOrderService
             _context.Orders.Add(order);
             await _context.SaveChangesAsync();
 
+            // SCRUM-129 bridge: until per-seller fan-out exists, all items go into a single
+            // StoreOrder owned by the products' store. Commission logic is deferred (rate 0).
+            var storeOrder = new StoreOrder
+            {
+                OrderId = order.Id,
+                StoreId = cart.CartItems.First().Product.StoreId,
+                Status = OrderStatus.Pending,
+                SubTotal = subtotal,
+                CommissionAmount = 0,
+                SellerNetAmount = subtotal
+            };
+
             foreach (var cartItem in cart.CartItems)
             {
-                var orderItem = new OrderItem
+                storeOrder.StoreOrderItems.Add(new StoreOrderItem
                 {
-                    OrderId = order.Id,
                     ProductId = cartItem.ProductId,
                     ProductNameSnapshot = cartItem.Product.Name,
                     Quantity = cartItem.Quantity,
                     UnitPrice = cartItem.Product.Price,
                     Subtotal = cartItem.Product.Price * cartItem.Quantity
-                };
+                });
 
-                _context.OrderItems.Add(orderItem);
                 cartItem.Product.Inventory!.Quantity -= cartItem.Quantity;
             }
+
+            _context.StoreOrders.Add(storeOrder);
 
             if (cart.Coupon != null)
                 cart.Coupon.UsageCount += 1;
@@ -122,8 +133,8 @@ public class OrderService : IOrderService
             });
 
             var orderWithItems = await _context.Orders
-                .Include(o => o.OrderItems)
-                    .ThenInclude(oi => oi.Product)
+                .Include(o => o.StoreOrders)
+                    .ThenInclude(so => so.StoreOrderItems)
                 .FirstAsync(o => o.Id == order.Id);
 
             return MapToResponse(orderWithItems);
@@ -142,7 +153,8 @@ public class OrderService : IOrderService
         if (pageSize > 100) pageSize = 100;
 
         var query = _context.Orders
-            .Include(o => o.OrderItems)
+            .Include(o => o.StoreOrders)
+                .ThenInclude(so => so.StoreOrderItems)
             .Include(o => o.Payment)
             .Where(o => o.UserId == userId)
             .OrderByDescending(o => o.CreatedAt);
@@ -166,8 +178,8 @@ public class OrderService : IOrderService
     public async Task<OrderResponse> GetOrderByIdAsync(int orderId, int userId, bool isAdmin)
     {
         var order = await _context.Orders
-            .Include(o => o.OrderItems)
-                .ThenInclude(oi => oi.Product)
+            .Include(o => o.StoreOrders)
+                .ThenInclude(so => so.StoreOrderItems)
             .Include(o => o.Payment)
             .FirstOrDefaultAsync(o => o.Id == orderId);
 
@@ -183,20 +195,25 @@ public class OrderService : IOrderService
     public async Task<OrderResponse> CancelOrderAsync(int orderId, int userId)
     {
         var order = await _context.Orders
-            .Include(o => o.OrderItems)
-                .ThenInclude(oi => oi.Product)
-                    .ThenInclude(p => p.Inventory)
+            .Include(o => o.StoreOrders)
+                .ThenInclude(so => so.StoreOrderItems)
+                    .ThenInclude(soi => soi.Product)
+                        .ThenInclude(p => p.Inventory)
             .FirstOrDefaultAsync(o => o.Id == orderId && o.UserId == userId);
 
         if (order == null)
             throw new NotFoundException($"Order with ID {orderId} was not found.");
 
-        if (order.Status != OrderStatus.Pending)
-            throw new ValidationException($"Order cannot be cancelled because it is already {order.Status}.");
+        var storeOrders = order.StoreOrders.ToList();
+        var currentStatus = storeOrders.FirstOrDefault()?.Status ?? OrderStatus.Pending;
 
-        order.Status = OrderStatus.Cancelled;
+        if (currentStatus != OrderStatus.Pending)
+            throw new ValidationException($"Order cannot be cancelled because it is already {currentStatus}.");
 
-        foreach (var item in order.OrderItems)
+        foreach (var storeOrder in storeOrders)
+            storeOrder.Status = OrderStatus.Cancelled;
+
+        foreach (var item in storeOrders.SelectMany(so => so.StoreOrderItems))
         {
             if (item.Product?.Inventory != null)
                 item.Product.Inventory.Quantity += item.Quantity;
@@ -214,12 +231,13 @@ public class OrderService : IOrderService
         if (pageSize > 100) pageSize = 100;
 
         var query = _context.Orders
-            .Include(o => o.OrderItems)
+            .Include(o => o.StoreOrders)
+                .ThenInclude(so => so.StoreOrderItems)
             .Include(o => o.Payment)
             .AsQueryable();
 
         if (!string.IsNullOrEmpty(status) && Enum.TryParse<OrderStatus>(status, true, out var parsedStatus))
-            query = query.Where(o => o.Status == parsedStatus);
+            query = query.Where(o => o.StoreOrders.Any(so => so.Status == parsedStatus));
 
         if (from.HasValue)
             query = query.Where(o => o.CreatedAt >= from.Value);
@@ -248,9 +266,10 @@ public class OrderService : IOrderService
     public async Task<OrderResponse> UpdateOrderStatusAsync(int orderId, UpdateOrderStatusRequest request)
     {
         var order = await _context.Orders
-            .Include(o => o.OrderItems)
-                .ThenInclude(oi => oi.Product)
-                    .ThenInclude(p => p.Inventory)
+            .Include(o => o.StoreOrders)
+                .ThenInclude(so => so.StoreOrderItems)
+                    .ThenInclude(soi => soi.Product)
+                        .ThenInclude(p => p.Inventory)
             .FirstOrDefaultAsync(o => o.Id == orderId);
 
         if (order == null)
@@ -258,6 +277,9 @@ public class OrderService : IOrderService
 
         if (!Enum.TryParse<OrderStatus>(request.Status, true, out var newStatus))
             throw new ValidationException($"Invalid order status: {request.Status}.");
+
+        var storeOrders = order.StoreOrders.ToList();
+        var currentStatus = storeOrders.FirstOrDefault()?.Status ?? OrderStatus.Pending;
 
         var validProgressions = new Dictionary<OrderStatus, List<OrderStatus>>
         {
@@ -268,19 +290,21 @@ public class OrderService : IOrderService
             { OrderStatus.Cancelled, new List<OrderStatus>() }
         };
 
-        if (!validProgressions[order.Status].Contains(newStatus))
-            throw new ValidationException($"Cannot transition order from {order.Status} to {newStatus}.");
+        if (!validProgressions[currentStatus].Contains(newStatus))
+            throw new ValidationException($"Cannot transition order from {currentStatus} to {newStatus}.");
 
         if (newStatus == OrderStatus.Cancelled)
         {
-            foreach (var item in order.OrderItems)
+            foreach (var item in storeOrders.SelectMany(so => so.StoreOrderItems))
             {
                 if (item.Product?.Inventory != null)
                     item.Product.Inventory.Quantity += item.Quantity;
             }
         }
 
-        order.Status = newStatus;
+        foreach (var storeOrder in storeOrders)
+            storeOrder.Status = newStatus;
+
         await _context.SaveChangesAsync();
 
         return MapToResponse(order);
@@ -289,31 +313,33 @@ public class OrderService : IOrderService
     private static OrderSummaryResponse MapToSummary(Order order) => new()
     {
         Id = order.Id,
-        Status = order.Status.ToString(),
+        Status = (order.StoreOrders.FirstOrDefault()?.Status ?? OrderStatus.Pending).ToString(),
         TotalAmount = order.TotalAmount,
         DiscountAmount = order.DiscountAmount,
         ShippingAddress = order.ShippingAddress,
         CreatedAt = order.CreatedAt,
-        ItemCount = order.OrderItems.Count,
+        ItemCount = order.StoreOrders.Sum(so => so.StoreOrderItems.Count),
         PaymentStatus = order.Payment?.Status.ToString()
     };
 
     private static OrderResponse MapToResponse(Order order) => new()
     {
         Id = order.Id,
-        Status = order.Status.ToString(),
+        Status = (order.StoreOrders.FirstOrDefault()?.Status ?? OrderStatus.Pending).ToString(),
         TotalAmount = order.TotalAmount,
         DiscountAmount = order.DiscountAmount,
         ShippingAddress = order.ShippingAddress,
         CreatedAt = order.CreatedAt,
-        Items = order.OrderItems.Select(oi => new OrderItemResponse
-        {
-            Id = oi.Id,
-            ProductId = oi.ProductId,
-            ProductName = oi.ProductNameSnapshot,
-            Quantity = oi.Quantity,
-            UnitPrice = oi.UnitPrice,
-            Subtotal = oi.Subtotal
-        }).ToList()
+        Items = order.StoreOrders
+            .SelectMany(so => so.StoreOrderItems)
+            .Select(soi => new OrderItemResponse
+            {
+                Id = soi.Id,
+                ProductId = soi.ProductId,
+                ProductName = soi.ProductNameSnapshot,
+                Quantity = soi.Quantity,
+                UnitPrice = soi.UnitPrice,
+                Subtotal = soi.Subtotal
+            }).ToList()
     };
 }

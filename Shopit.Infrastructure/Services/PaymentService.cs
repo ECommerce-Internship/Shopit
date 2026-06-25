@@ -24,6 +24,7 @@ public class PaymentService : IPaymentService
     {
         var order = await _context.Orders
             .Include(o => o.User)
+            .Include(o => o.StoreOrders)
             .FirstOrDefaultAsync(o => o.Id == request.OrderId);
 
         if (order is null)
@@ -57,7 +58,8 @@ public class PaymentService : IPaymentService
 
         if (status == PaymentStatus.Paid)
         {
-            order.Status = OrderStatus.Processing;
+            foreach (var storeOrder in order.StoreOrders)
+                storeOrder.Status = OrderStatus.Processing;
             await _emailService.SendOrderConfirmationAsync(order.Id, order.User.Email);
             Log.Information("Payment successful for Order {OrderId}", order.Id);
         }
@@ -96,6 +98,7 @@ public class PaymentService : IPaymentService
     {
         var payment = await _context.Payments
             .Include(p => p.Order)
+                .ThenInclude(o => o.StoreOrders)
             .FirstOrDefaultAsync(p => p.Id == paymentId);
 
         if (payment is null)
@@ -105,7 +108,8 @@ public class PaymentService : IPaymentService
             throw new ConflictException($"Payment {paymentId} cannot be refunded because its status is {payment.Status}.");
 
         payment.Status = PaymentStatus.Refunded;
-        payment.Order.Status = OrderStatus.Cancelled;
+        foreach (var storeOrder in payment.Order.StoreOrders)
+            storeOrder.Status = OrderStatus.Cancelled;
 
         await _context.SaveChangesAsync();
 

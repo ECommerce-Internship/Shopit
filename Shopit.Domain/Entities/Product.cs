@@ -14,8 +14,11 @@ public class Product
     public int CategoryId { get; set; }
     public Category Category { get; set; } = null!;
 
+    public int StoreId { get; set; }
+    public Store Store { get; set; } = null!;
+
     public Inventory? Inventory { get; set; }
     public ICollection<CartItem> CartItems { get; set; } = new List<CartItem>();
-    public ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
+    public ICollection<StoreOrderItem> StoreOrderItems { get; set; } = new List<StoreOrderItem>();
     public ICollection<Review> Reviews { get; set; } = new List<Review>();
 }

@@ -168,11 +168,19 @@ public class GeminiService : IGeminiService
         if (content.Features.Any(string.IsNullOrWhiteSpace))
             throw new ExternalServiceException("Generated content contains an empty feature.");
 
-        if (string.IsNullOrWhiteSpace(content.SeoTitle) || content.SeoTitle.Length > MaxSeoTitleLength)
-            throw new ExternalServiceException($"Generated SEO title must be between 1 and {MaxSeoTitleLength} characters.");
+        if (string.IsNullOrWhiteSpace(content.SeoTitle))
+            throw new ExternalServiceException("Generated content is missing an SEO title.");
 
-        if (string.IsNullOrWhiteSpace(content.MetaDescription) || content.MetaDescription.Length > MaxMetaDescriptionLength)
-            throw new ExternalServiceException($"Generated meta description must be between 1 and {MaxMetaDescriptionLength} characters.");
+        if (string.IsNullOrWhiteSpace(content.MetaDescription))
+            throw new ExternalServiceException("Generated content is missing a meta description.");
+
+        // Gemini does not always respect schema-level maxLength constraints, so trim
+        // here rather than rejecting an otherwise-good response over a length overage.
+        if (content.SeoTitle.Length > MaxSeoTitleLength)
+            content.SeoTitle = content.SeoTitle[..MaxSeoTitleLength].TrimEnd();
+
+        if (content.MetaDescription.Length > MaxMetaDescriptionLength)
+            content.MetaDescription = content.MetaDescription[..MaxMetaDescriptionLength].TrimEnd();
     }
 
     private static string BuildPrompt(string productName, string category, string specs)
@@ -217,8 +225,10 @@ public class GeminiService : IGeminiService
                     {
                         description = new { type = "STRING" },
                         features = new { type = "ARRAY", items = new { type = "STRING" } },
-                        seoTitle = new { type = "STRING" },
-                        metaDescription = new { type = "STRING" }
+                        // maxLength is part of Gemini's OpenAPI-subset schema and is string-typed
+                        // even though it represents a number — passing a raw int is silently ignored.
+                        seoTitle = new { type = "STRING", maxLength = MaxSeoTitleLength.ToString() },
+                        metaDescription = new { type = "STRING", maxLength = MaxMetaDescriptionLength.ToString() }
                     },
                     required = new[] { "description", "features", "seoTitle", "metaDescription" }
                 }

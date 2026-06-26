@@ -6,6 +6,7 @@ using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -14,6 +15,7 @@ using Serilog;
 using Serilog.Events;
 using Shopit.API.Middleware;
 using Shopit.Application.AI;
+using Shopit.Application.Chat;
 using Shopit.Application.Interfaces;
 using Shopit.Application.Products;
 using Shopit.Application.Validators;
@@ -149,6 +151,14 @@ builder.Services.AddSingleton(new BlobServiceClient(blobConnection));
 
 builder.Services.AddHttpClient();
 
+// Named HttpClient for Gemini API calls (used by GeminiService and ChatService).
+// BaseAddress was previously unset, which meant GeminiService's relative URLs
+// had nothing to resolve against outside of unit tests (where it was mocked).
+builder.Services.AddHttpClient(GeminiService.HttpClientName, client =>
+{
+    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
+});
+
 // SFTP product import settings (Host, Port, Username, Password, FilePath).
 builder.Services.Configure<SftpSettings>(builder.Configuration.GetSection(SftpSettings.SectionName));
 
@@ -162,6 +172,14 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(1),
                 PermitLimit = 1000
             }));
+
+    // Named policy required by [EnableRateLimiting("GeminiContentGeneration")]
+    // on the AI controller's generate-content endpoints.
+    options.AddFixedWindowLimiter("GeminiContentGeneration", limiterOptions =>
+    {
+        limiterOptions.Window = TimeSpan.FromMinutes(1);
+        limiterOptions.PermitLimit = 5;
+    });
 });
 
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -180,6 +198,7 @@ builder.Services.AddScoped<ICacheService, CacheService>();
 builder.Services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
 builder.Services.AddScoped<IExternalAuthService, ExternalAuthService>();
 builder.Services.AddScoped<IGeminiService, GeminiService>();
+builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();

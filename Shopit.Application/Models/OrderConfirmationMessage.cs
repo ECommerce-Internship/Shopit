@@ -4,8 +4,15 @@ public class OrderConfirmationMessage
 {
     public int OrderId { get; set; }
     public string ToEmail { get; set; } = string.Empty;
+    public decimal GrandTotal { get; set; }
+    public List<StoreOrderMessage> StoreOrders { get; set; } = new();
+}
+
+public class StoreOrderMessage
+{
+    public string StoreName { get; set; } = string.Empty;
+    public decimal SubTotal { get; set; }
     public List<OrderItemMessage> Items { get; set; } = new();
-    public decimal Total { get; set; }
 }
 
 public class OrderItemMessage

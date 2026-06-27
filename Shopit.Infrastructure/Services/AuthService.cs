@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Shopit.Application.DTOs.Auth;
+using Shopit.Application.DTOs.Stores;
 using Shopit.Application.Interfaces;
 using Shopit.Domain.Entities;
 using Shopit.Domain.Enums;
@@ -15,13 +16,22 @@ public class AuthService : IAuthService
     private readonly AppDbContext _db;
     private readonly IJwtTokenService _jwtTokenService;
     private readonly IConfiguration _config;
+    private readonly IStoreService _storeService;
 
-    public AuthService(AppDbContext db, IJwtTokenService jwtTokenService, IConfiguration config)
+    public AuthService(AppDbContext db, IJwtTokenService jwtTokenService, IConfiguration config, IStoreService storeService)
     {
         _db = db;
         _jwtTokenService = jwtTokenService;
         _config = config;
+        _storeService = storeService;
     }
+
+    // The store IDs to embed in a user's JWT — the seller's own stores; empty for customers/admins
+    // (the seeded admin owns the platform store, so this is gated on the Seller role). SCRUM-144.
+    private async Task<List<int>> GetSellerStoreIdsAsync(User user) =>
+        user.Role == UserRole.Seller
+            ? await _db.Stores.Where(s => s.OwnerUserId == user.Id).Select(s => s.Id).ToListAsync()
+            : new List<int>();
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request)
     {
@@ -41,7 +51,8 @@ public class AuthService : IAuthService
         _db.Users.Add(user);
         await _db.SaveChangesAsync();
 
-        var accessToken = _jwtTokenService.GenerateAccessToken(user);
+        var storeIds = await GetSellerStoreIdsAsync(user);
+        var accessToken = _jwtTokenService.GenerateAccessToken(user, storeIds);
         var expiresIn = int.Parse(_config["JwtSettings:ExpiryMinutes"] ?? "15") * 60;
         var refreshTokenValue = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
 
@@ -53,6 +64,51 @@ public class AuthService : IAuthService
         });
 
         await _db.SaveChangesAsync();
+
+        return BuildResponse(user, accessToken, refreshTokenValue, expiresIn);
+    }
+
+    public async Task<AuthResponse> RegisterSellerAsync(RegisterSellerRequest request)
+    {
+        if (await _db.Users.AnyAsync(u => u.Email == request.Email))
+            throw new ConflictException("Email is already registered.");
+
+        var hash = BCrypt.Net.BCrypt.HashPassword(request.Password, workFactor: 12);
+
+        // Create the seller and their first store atomically.
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+
+        var user = new User
+        {
+            Email = request.Email,
+            PasswordHash = hash,
+            FirstName = request.FirstName,
+            LastName = request.LastName,
+            Role = UserRole.Seller
+        };
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync();
+
+        await _storeService.CreateStoreAsync(user.Id, new CreateStoreRequest
+        {
+            Name = request.StoreName,
+            Description = request.StoreDescription
+        });
+
+        var storeIds = await GetSellerStoreIdsAsync(user);
+        var accessToken = _jwtTokenService.GenerateAccessToken(user, storeIds);
+        var expiresIn = int.Parse(_config["JwtSettings:ExpiryMinutes"] ?? "15") * 60;
+        var refreshTokenValue = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+
+        _db.RefreshTokens.Add(new RefreshToken
+        {
+            Token = refreshTokenValue,
+            UserId = user.Id,
+            ExpiresAt = DateTime.UtcNow.AddDays(7)
+        });
+        await _db.SaveChangesAsync();
+
+        await transaction.CommitAsync();
 
         return BuildResponse(user, accessToken, refreshTokenValue, expiresIn);
     }
@@ -69,7 +125,8 @@ public class AuthService : IAuthService
         if (!user.IsActive)
             throw new UnauthorizedException("Your account has been deactivated.");
 
-        var accessToken = _jwtTokenService.GenerateAccessToken(user);
+        var storeIds = await GetSellerStoreIdsAsync(user);
+        var accessToken = _jwtTokenService.GenerateAccessToken(user, storeIds);
         var expiresIn = int.Parse(_config["JwtSettings:ExpiryMinutes"] ?? "15") * 60;
         var refreshTokenValue = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
 
@@ -100,7 +157,8 @@ public class AuthService : IAuthService
 
         existing.IsRevoked = true;
 
-        var accessToken = _jwtTokenService.GenerateAccessToken(existing.User);
+        var storeIds = await GetSellerStoreIdsAsync(existing.User);
+        var accessToken = _jwtTokenService.GenerateAccessToken(existing.User, storeIds);
         var expiresIn = int.Parse(_config["JwtSettings:ExpiryMinutes"] ?? "15") * 60;
         var newRefreshTokenValue = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
 

@@ -70,5 +70,62 @@ public static class DbInitializer
 
         context.Coupons.Add(coupon);
         context.SaveChanges();
+
+        // Test accounts + multi-store sample data (SCRUM-131): two sellers each owning an approved
+        // store, plus a customer, so the seller/customer/admin roles all have a login and the
+        // multi-store path can be exercised end-to-end.
+        var seller1 = new User
+        {
+            FirstName = "Sarah",
+            LastName = "Seller",
+            Email = "seller1@shopit.com",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Seller@123"),
+            Role = UserRole.Seller
+        };
+
+        var seller2 = new User
+        {
+            FirstName = "Sam",
+            LastName = "Vendor",
+            Email = "seller2@shopit.com",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Seller@123"),
+            Role = UserRole.Seller
+        };
+
+        var customer = new User
+        {
+            FirstName = "Casey",
+            LastName = "Customer",
+            Email = "customer@shopit.com",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Customer@123"),
+            Role = UserRole.Customer
+        };
+
+        context.Users.AddRange(seller1, seller2, customer);
+        context.SaveChanges();
+
+        var sellerStores = new List<Store>
+        {
+            new() { Name = "Gadget Hub", Slug = "gadget-hub", Status = StoreStatus.Approved,
+                CommissionRate = 0.10m, OwnerUserId = seller1.Id },
+            new() { Name = "Book Nook", Slug = "book-nook", Status = StoreStatus.Approved,
+                CommissionRate = 0.15m, OwnerUserId = seller2.Id },
+        };
+
+        context.Stores.AddRange(sellerStores);
+        context.SaveChanges();
+
+        // Each seller product deliberately reuses a platform-store SKU to exercise the per-store
+        // SKU uniqueness (composite (StoreId, SKU) index) — two stores may share a SKU.
+        var sellerProducts = new List<Product>
+        {
+            new() { Name = "Wireless Earbuds", SKU = "ELEC-001", Price = 129.99m, CategoryId = categories[0].Id, StoreId = sellerStores[0].Id,
+                Inventory = new Inventory { Quantity = 60, LowStockThreshold = 10 } },
+            new() { Name = "Sci-Fi Novel", SKU = "BOOK-001", Price = 14.99m, CategoryId = categories[2].Id, StoreId = sellerStores[1].Id,
+                Inventory = new Inventory { Quantity = 40, LowStockThreshold = 5 } },
+        };
+
+        context.Products.AddRange(sellerProducts);
+        context.SaveChanges();
     }
 }

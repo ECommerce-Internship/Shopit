@@ -4,5 +4,6 @@ public enum StoreStatus
 {
     Pending,
     Approved,
-    Suspended
+    Suspended,
+    Rejected
 }

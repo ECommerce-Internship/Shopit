@@ -9,6 +9,7 @@ using OfficeOpenXml;
 using Shopit.Application.Products.DTOs;
 using Shopit.Application.Products.Validators;
 using Shopit.Domain.Entities;
+using Shopit.Domain.Enums;
 using Shopit.Domain.Exceptions;
 using Shopit.Infrastructure.Data;
 using Shopit.Infrastructure.Services;
@@ -17,6 +18,9 @@ namespace Shopit.Tests.Products;
 
 public class ProductServiceTests
 {
+    private const int PlatformStoreId = 1;
+    private const int SecondStoreId = 2;
+
     public ProductServiceTests()
     {
         ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
@@ -38,10 +42,11 @@ public class ProductServiceTests
             Sku = "LAPTOP-001",
             ImageUrl = "https://example.com/laptop.png",
             CategoryId = 1,
+            StoreId = PlatformStoreId,
             InitialStock = 15
         };
 
-        var result = await service.CreateAsync(request);
+        var result = await service.CreateAsync(request, 1, false);
 
         result.Should().NotBeNull();
         result.Name.Should().Be("Gaming Laptop");
@@ -66,6 +71,7 @@ public class ProductServiceTests
             Price = 99.99m,
             SKU = "DUPLICATE-SKU",
             CategoryId = 1,
+            StoreId = PlatformStoreId,
             CreatedAt = DateTime.UtcNow,
             IsDeleted = false
         });
@@ -81,14 +87,128 @@ public class ProductServiceTests
             Price = 149.99m,
             Sku = "DUPLICATE-SKU",
             CategoryId = 1,
+            StoreId = PlatformStoreId,
             InitialStock = 5
         };
 
-        Func<Task> act = async () => await service.CreateAsync(request);
+        Func<Task> act = async () => await service.CreateAsync(request, 1, false);
 
         await act.Should()
             .ThrowAsync<ConflictException>()
             .WithMessage("*Product SKU 'DUPLICATE-SKU' already exists*");
+    }
+
+    [Fact]
+    public async Task CreateProduct_AssignsChosenStore()
+    {
+        await using var context = CreateContext();
+        await SeedCategoryAsync(context);
+
+        var service = CreateService(context);
+
+        var result = await service.CreateAsync(new CreateProductRequest
+        {
+            Name = "Tablet",
+            Price = 499.99m,
+            Sku = "TABLET-001",
+            CategoryId = 1,
+            StoreId = PlatformStoreId,
+            InitialStock = 10
+        }, userId: 1, isAdmin: false);
+
+        var created = await context.Products.FindAsync(result.Id);
+        created!.StoreId.Should().Be(PlatformStoreId);
+    }
+
+    [Fact]
+    public async Task CreateProduct_SellerDoesNotOwnStore_ThrowsForbidden()
+    {
+        await using var context = CreateContext();
+        await SeedCategoryAsync(context); // platform store is owned by user 1
+
+        var service = CreateService(context);
+
+        // user 99 does not own the platform store
+        var act = async () => await service.CreateAsync(new CreateProductRequest
+        {
+            Name = "Sneaky", Price = 9.99m, Sku = "SNEAK-1", CategoryId = 1,
+            StoreId = PlatformStoreId, InitialStock = 1
+        }, userId: 99, isAdmin: false);
+
+        await act.Should().ThrowAsync<ForbiddenException>();
+    }
+
+    [Fact]
+    public async Task CreateProduct_SameSkuDifferentStore_Succeeds()
+    {
+        await using var context = CreateContext();
+        await SeedCategoryAsync(context);
+
+        // A second store already owns a product with this SKU.
+        context.Stores.Add(new Store
+        {
+            Id = SecondStoreId,
+            Name = "Second Store",
+            Slug = "second-store",
+            Status = StoreStatus.Approved,
+            CommissionRate = 0,
+            OwnerUserId = 1
+        });
+
+        context.Products.Add(new Product
+        {
+            Id = 50,
+            Name = "Other Store Product",
+            Price = 19.99m,
+            SKU = "SHARED-SKU",
+            CategoryId = 1,
+            StoreId = SecondStoreId,
+            CreatedAt = DateTime.UtcNow,
+            IsDeleted = false
+        });
+
+        await context.SaveChangesAsync();
+
+        var service = CreateService(context);
+
+        // Creating the same SKU in the platform store must succeed — uniqueness is per store.
+        var result = await service.CreateAsync(new CreateProductRequest
+        {
+            Name = "Platform Product",
+            Price = 29.99m,
+            Sku = "SHARED-SKU",
+            CategoryId = 1,
+            StoreId = PlatformStoreId,
+            InitialStock = 5
+        }, userId: 1, isAdmin: false);
+
+        result.Should().NotBeNull();
+        result.Sku.Should().Be("SHARED-SKU");
+
+        var created = await context.Products.FindAsync(result.Id);
+        created!.StoreId.Should().Be(PlatformStoreId);
+    }
+
+    [Fact]
+    public async Task GetAll_AnnotatesProductsWithOwningStore()
+    {
+        await using var context = CreateContext();
+        await SeedCategoryAsync(context); // seeds the Approved "platform" store
+
+        await CreateService(context).CreateAsync(new CreateProductRequest
+        {
+            Name = "Annotated", Price = 10m, Sku = "ANN-1", CategoryId = 1, StoreId = PlatformStoreId, InitialStock = 5
+        }, userId: 1, isAdmin: false);
+
+        var result = await CreateService(context).GetAllAsync(new ProductQueryParameters
+        {
+            PageNumber = 1,
+            PageSize = 50
+        });
+
+        var item = result.Items.Should().ContainSingle(p => p.Sku == "ANN-1").Subject;
+        item.StoreName.Should().Be("Shopit Platform Store");
+        item.StoreSlug.Should().Be("platform");
     }
 
     [Fact]
@@ -103,6 +223,16 @@ public class ProductServiceTests
             Slug = "electronics"
         };
 
+        var store = new Store
+        {
+            Id = PlatformStoreId,
+            Name = "Shopit Platform Store",
+            Slug = "platform",
+            Status = StoreStatus.Approved,
+            CommissionRate = 0,
+            OwnerUserId = 1
+        };
+
         var product = new Product
         {
             Id = 20,
@@ -113,6 +243,8 @@ public class ProductServiceTests
             ImageUrl = "https://example.com/mouse.png",
             CategoryId = 1,
             Category = category,
+            StoreId = PlatformStoreId,
+            Store = store,
             CreatedAt = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc),
             IsDeleted = false,
             Inventory = new Inventory
@@ -124,6 +256,7 @@ public class ProductServiceTests
         };
 
         context.Categories.Add(category);
+        context.Stores.Add(store);
         context.Products.Add(product);
         await context.SaveChangesAsync();
 
@@ -140,6 +273,8 @@ public class ProductServiceTests
         result.ImageUrl.Should().Be("https://example.com/mouse.png");
         result.CategoryId.Should().Be(1);
         result.CategoryName.Should().Be("Electronics");
+        result.StoreName.Should().Be("Shopit Platform Store");
+        result.StoreSlug.Should().Be("platform");
         result.StockQuantity.Should().Be(40);
         result.AverageRating.Should().Be(0);
         result.ReviewCount.Should().Be(0);
@@ -194,13 +329,81 @@ public class ProductServiceTests
 
         var service = CreateService(context);
 
-        await service.DeleteAsync(50);
+        await service.DeleteAsync(50, userId: 0, isAdmin: true);
 
         var deletedProduct = await context.Products.FirstAsync(p => p.Id == 50);
 
         deletedProduct.IsDeleted.Should().BeTrue();
         context.ProductWasDeletedWhenSaveChangesStarted.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task UpdateProduct_NonOwner_ThrowsForbidden()
+    {
+        await using var context = CreateContext();
+        await SeedCategoryAsync(context); // platform store (id 1) owned by user 1
+        context.Products.Add(new Product
+        {
+            Id = 60, Name = "Owned", Price = 5m, SKU = "OWN-1", CategoryId = 1,
+            StoreId = PlatformStoreId, CreatedAt = DateTime.UtcNow, IsDeleted = false,
+            Inventory = new Inventory { Quantity = 1 }
+        });
+        await context.SaveChangesAsync();
+
+        var service = CreateService(context);
+
+        var act = async () => await service.UpdateAsync(60, ValidUpdateRequest("OWN-1"), userId: 99, isAdmin: false);
+
+        await act.Should().ThrowAsync<ForbiddenException>();
+    }
+
+    [Fact]
+    public async Task UpdateProduct_Admin_BypassesOwnership()
+    {
+        await using var context = CreateContext();
+        await SeedCategoryAsync(context);
+        context.Products.Add(new Product
+        {
+            Id = 61, Name = "Owned", Price = 5m, SKU = "OWN-2", CategoryId = 1,
+            StoreId = PlatformStoreId, CreatedAt = DateTime.UtcNow, IsDeleted = false,
+            Inventory = new Inventory { Quantity = 1 }
+        });
+        await context.SaveChangesAsync();
+
+        var service = CreateService(context);
+
+        var result = await service.UpdateAsync(61, ValidUpdateRequest("OWN-2"), userId: 99, isAdmin: true);
+
+        result.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task DeleteProduct_NonOwner_ThrowsForbidden()
+    {
+        await using var context = CreateContext();
+        await SeedCategoryAsync(context);
+        context.Products.Add(new Product
+        {
+            Id = 62, Name = "Owned", Price = 5m, SKU = "OWN-3", CategoryId = 1,
+            StoreId = PlatformStoreId, CreatedAt = DateTime.UtcNow, IsDeleted = false
+        });
+        await context.SaveChangesAsync();
+
+        var service = CreateService(context);
+
+        var act = async () => await service.DeleteAsync(62, userId: 99, isAdmin: false);
+
+        await act.Should().ThrowAsync<ForbiddenException>();
+    }
+
+    private static UpdateProductRequest ValidUpdateRequest(string sku) => new()
+    {
+        Name = "Updated",
+        Price = 12.50m,
+        Sku = sku,
+        CategoryId = 1,
+        StockQuantity = 3
+    };
 
     [Fact]
     public async Task ImportExcel_ValidRows_ReturnsCorrectAddedCount()
@@ -384,6 +587,27 @@ public class ProductServiceTests
             Id = 1,
             Name = "Electronics",
             Slug = "electronics"
+        });
+
+        // Products are created/imported into the default "platform" store, which the
+        // service resolves by slug — so it must exist for create/import tests.
+        context.Users.Add(new User
+        {
+            Id = 1,
+            FirstName = "Platform",
+            LastName = "Owner",
+            Email = "platform-owner@test.com",
+            Role = UserRole.Admin
+        });
+
+        context.Stores.Add(new Store
+        {
+            Id = PlatformStoreId,
+            Name = "Shopit Platform Store",
+            Slug = "platform",
+            Status = StoreStatus.Approved,
+            CommissionRate = 0,
+            OwnerUserId = 1
         });
 
         await context.SaveChangesAsync();

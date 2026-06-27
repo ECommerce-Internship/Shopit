@@ -19,12 +19,13 @@ namespace Shopit.Infrastructure.Migrations
                 name: "Status",
                 table: "Orders");
 
+            // Added nullable first so existing rows survive; backfilled and set NOT NULL below
+            // (before the FK) — see the legacy-backfill SQL after the marketplace tables are created.
             migrationBuilder.AddColumn<int>(
                 name: "StoreId",
                 table: "Products",
                 type: "integer",
-                nullable: false,
-                defaultValue: 0);
+                nullable: true);
 
             migrationBuilder.AddColumn<int>(
                 name: "StoreId",
@@ -115,6 +116,34 @@ namespace Shopit.Infrastructure.Migrations
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
+
+            // SCRUM-131 legacy backfill: if this migration runs against a database that already has
+            // products (their StoreId is NULL after the nullable add), attach them to a Platform
+            // Store owned by an existing admin so no data is lost and the FK below holds. On a fresh
+            // database there are no products yet, so this is a no-op and DbInitializer creates the
+            // Platform Store instead. (Status 1 = StoreStatus.Approved, Role 1 = UserRole.Admin.)
+            migrationBuilder.Sql(@"
+                INSERT INTO ""Stores"" (""Name"", ""Slug"", ""Status"", ""CommissionRate"", ""CreatedAt"", ""OwnerUserId"")
+                SELECT 'Shopit Platform Store', 'platform', 1, 0, now(),
+                       (SELECT ""Id"" FROM ""Users"" WHERE ""Role"" = 1 ORDER BY ""Id"" LIMIT 1)
+                WHERE EXISTS (SELECT 1 FROM ""Products"" WHERE ""StoreId"" IS NULL)
+                  AND EXISTS (SELECT 1 FROM ""Users"" WHERE ""Role"" = 1)
+                  AND NOT EXISTS (SELECT 1 FROM ""Stores"" WHERE ""Slug"" = 'platform');
+
+                UPDATE ""Products""
+                SET ""StoreId"" = (SELECT ""Id"" FROM ""Stores"" WHERE ""Slug"" = 'platform')
+                WHERE ""StoreId"" IS NULL
+                  AND EXISTS (SELECT 1 FROM ""Stores"" WHERE ""Slug"" = 'platform');
+            ");
+
+            migrationBuilder.AlterColumn<int>(
+                name: "StoreId",
+                table: "Products",
+                type: "integer",
+                nullable: false,
+                oldClrType: typeof(int),
+                oldType: "integer",
+                oldNullable: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_Products_StoreId",

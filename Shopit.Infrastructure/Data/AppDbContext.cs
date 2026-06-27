@@ -156,7 +156,7 @@ public class AppDbContext : DbContext
             .HasIndex(u => u.Email).IsUnique();
 
         modelBuilder.Entity<Product>()
-            .HasIndex(p => p.SKU).IsUnique();
+            .HasIndex(p => new { p.StoreId, p.SKU }).IsUnique();
 
         modelBuilder.Entity<Coupon>()
             .HasIndex(c => c.Code).IsUnique();

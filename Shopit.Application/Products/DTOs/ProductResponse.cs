@@ -18,6 +18,12 @@ public class ProductResponse
 
     public string CategoryName { get; set; } = string.Empty;
 
+    public int StoreId { get; set; }
+
+    public string StoreName { get; set; } = string.Empty;
+
+    public string StoreSlug { get; set; } = string.Empty;
+
     public int StockQuantity { get; set; }
 
     public double AverageRating { get; set; }

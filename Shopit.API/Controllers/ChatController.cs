@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using Asp.Versioning;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Shopit.Application.Chat;
 
@@ -9,6 +11,7 @@ namespace Shopit.API.Controllers;
 /// </summary>
 [ApiController]
 [ApiVersion("1.0")]
+[Authorize]
 [Route("api/v{version:apiVersion}/[controller]")]
 public class ChatController : ControllerBase
 {
@@ -22,10 +25,13 @@ public class ChatController : ControllerBase
     /// <summary>
     /// Sends a message to the assistant. If no conversationId is supplied, a new
     /// conversation is started and its id is returned for use in follow-up requests.
+    /// The caller's identity (userId, role) is taken from JWT claims only — never
+    /// from the request body — and used to scope and filter tool access.
     /// </summary>
     [HttpPost]
     [ProducesResponseType(typeof(ChatResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<ChatResponse>> SendMessage(
         [FromBody] ChatRequest request,
@@ -34,9 +40,14 @@ public class ChatController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Message))
             return BadRequest(new[] { "Message is required." });
 
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var role = User.FindFirstValue(ClaimTypes.Role)!;
+
         var response = await _chatService.SendMessageAsync(
             request.Message,
             request.ConversationId,
+            userId,
+            role,
             cancellationToken);
 
         return Ok(response);

@@ -9,6 +9,7 @@ using Shopit.Application.Interfaces;
 using Shopit.Application.Products;
 using Shopit.Application.Products.DTOs;
 using Shopit.Domain.Entities;
+using Shopit.Domain.Enums;
 using Shopit.Domain.Exceptions;
 using Shopit.Infrastructure.Data;
 using DomainValidationException = Shopit.Domain.Exceptions.ValidationException;
@@ -24,6 +25,10 @@ public class ProductService : IProductService
     private readonly ICacheService _cache;
     private readonly IGeminiService _geminiService;
 
+    // Until seller-owned product management exists, products are created/imported into the
+    // default platform store. SKU uniqueness is scoped per store (composite (StoreId, SKU) index).
+    private const string DefaultStoreSlug = "platform";
+
     public ProductService(
         AppDbContext context,
         IValidator<CreateProductRequest> createValidator,
@@ -36,6 +41,49 @@ public class ProductService : IProductService
         _updateValidator = updateValidator;
         _cache = cache;
         _geminiService = geminiService;
+    }
+
+    private async Task<int> GetDefaultStoreIdAsync(CancellationToken cancellationToken = default)
+    {
+        var storeId = await _context.Stores
+            .Where(s => s.Slug == DefaultStoreSlug)
+            .Select(s => s.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (storeId == 0)
+            throw new InvalidOperationException($"Default store '{DefaultStoreSlug}' is not configured.");
+
+        return storeId;
+    }
+
+    // Validates that a new product can be created in the chosen store: an admin may target any
+    // existing store; a seller may only target a store they own.
+    private async Task<int> ResolveCreateStoreAsync(int storeId, int userId, bool isAdmin)
+    {
+        if (isAdmin)
+        {
+            var exists = await _context.Stores.AnyAsync(s => s.Id == storeId);
+            if (!exists)
+                throw new NotFoundException($"Store with id {storeId} was not found.");
+        }
+        else
+        {
+            var owns = await _context.Stores.AnyAsync(s => s.Id == storeId && s.OwnerUserId == userId);
+            if (!owns)
+                throw new ForbiddenException("You can only create products in your own stores.");
+        }
+
+        return storeId;
+    }
+
+    // A seller may mutate only products in a store they own; an admin bypasses the check.
+    private async Task EnsureOwnsProductAsync(int productId, int userId, bool isAdmin)
+    {
+        if (isAdmin) return;
+
+        var owns = await _context.Products.AnyAsync(p => p.Id == productId && p.Store.OwnerUserId == userId);
+        if (!owns)
+            throw new ForbiddenException("You can only manage products in your own stores.");
     }
 
     public async Task<ProductContentResponse> GenerateContentAsync(int id, CancellationToken cancellationToken = default)
@@ -63,7 +111,7 @@ public class ProductService : IProductService
 
         var pageNumber = queryParameters.PageNumber <= 0 ? 1 : queryParameters.PageNumber;
         var pageSize = queryParameters.PageSize <= 0 ? 10 : queryParameters.PageSize;
-        var cacheKey = $"products:p{pageNumber}:s{pageSize}:search{queryParameters.Search?.Trim().ToLower()}:cat{queryParameters.CategoryId}:min{queryParameters.MinPrice}:max{queryParameters.MaxPrice}:sort{queryParameters.SortBy}:{queryParameters.SortDirection}";
+        var cacheKey = $"products:p{pageNumber}:s{pageSize}:search{queryParameters.Search?.Trim().ToLower()}:cat{queryParameters.CategoryId}:store{queryParameters.StoreSlug}:min{queryParameters.MinPrice}:max{queryParameters.MaxPrice}:sort{queryParameters.SortBy}:{queryParameters.SortDirection}";
 
         PaginatedResult<ProductResponse>? cached = null;
         try
@@ -90,7 +138,8 @@ public class ProductService : IProductService
 
         var productsQuery = _context.Products
             .AsNoTracking()
-            .Where(p => !p.IsDeleted);
+            // Only products from approved stores are publicly listable (SCRUM-132).
+            .Where(p => !p.IsDeleted && p.Store.Status == StoreStatus.Approved);
 
         if (!string.IsNullOrWhiteSpace(queryParameters.Search))
         {
@@ -100,6 +149,9 @@ public class ProductService : IProductService
 
         if (queryParameters.CategoryId.HasValue)
             productsQuery = productsQuery.Where(p => p.CategoryId == queryParameters.CategoryId.Value);
+
+        if (!string.IsNullOrWhiteSpace(queryParameters.StoreSlug))
+            productsQuery = productsQuery.Where(p => p.Store.Slug == queryParameters.StoreSlug);
 
         if (queryParameters.MinPrice.HasValue)
             productsQuery = productsQuery.Where(p => p.Price >= queryParameters.MinPrice.Value);
@@ -195,7 +247,7 @@ public class ProductService : IProductService
         return product;
     }
 
-    public async Task<ProductResponse> CreateAsync(CreateProductRequest request)
+    public async Task<ProductResponse> CreateAsync(CreateProductRequest request, int userId, bool isAdmin)
     {
         var validationResult = await _createValidator.ValidateAsync(request);
 
@@ -210,8 +262,10 @@ public class ProductService : IProductService
         if (!categoryExists)
             throw new NotFoundException($"Category with id {request.CategoryId} was not found.");
 
+        var storeId = await ResolveCreateStoreAsync(request.StoreId, userId, isAdmin);
+
         var skuExists = await _context.Products
-            .AnyAsync(p => p.SKU == sku);
+            .AnyAsync(p => p.StoreId == storeId && p.SKU == sku);
 
         if (skuExists)
             throw new ConflictException($"Product SKU '{sku}' already exists.");
@@ -224,6 +278,7 @@ public class ProductService : IProductService
             SKU = sku,
             ImageUrl = request.ImageUrl,
             CategoryId = request.CategoryId,
+            StoreId = storeId,
             CreatedAt = DateTime.UtcNow,
             IsDeleted = false,
             Inventory = new Inventory
@@ -239,7 +294,7 @@ public class ProductService : IProductService
         return await GetByIdAsync(product.Id);
     }
 
-    public async Task<ProductResponse> UpdateAsync(int id, UpdateProductRequest request)
+    public async Task<ProductResponse> UpdateAsync(int id, UpdateProductRequest request, int userId, bool isAdmin)
     {
         var validationResult = await _updateValidator.ValidateAsync(request);
 
@@ -253,6 +308,8 @@ public class ProductService : IProductService
         if (product is null)
             throw new NotFoundException($"Product with id {id} was not found.");
 
+        await EnsureOwnsProductAsync(id, userId, isAdmin);
+
         var sku = request.Sku.Trim();
 
         var categoryExists = await _context.Categories
@@ -262,7 +319,7 @@ public class ProductService : IProductService
             throw new NotFoundException($"Category with id {request.CategoryId} was not found.");
 
         var skuExists = await _context.Products
-            .AnyAsync(p => p.SKU == sku && p.Id != id);
+            .AnyAsync(p => p.StoreId == product.StoreId && p.SKU == sku && p.Id != id);
 
         if (skuExists)
             throw new ConflictException($"Product SKU '{sku}' already exists.");
@@ -295,13 +352,15 @@ public class ProductService : IProductService
         return await GetByIdAsync(id);
     }
 
-    public async Task DeleteAsync(int id)
+    public async Task DeleteAsync(int id, int userId, bool isAdmin)
     {
         var product = await _context.Products
             .FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted);
 
         if (product is null)
             throw new NotFoundException($"Product with id {id} was not found.");
+
+        await EnsureOwnsProductAsync(id, userId, isAdmin);
 
         product.IsDeleted = true;
 
@@ -310,13 +369,15 @@ public class ProductService : IProductService
         await _cache.RemoveAsync($"product:{id}");
     }
 
-    public async Task<string> UploadImageAsync(int productId, IFormFile file, IBlobStorageService blobStorageService, string containerName)
+    public async Task<string> UploadImageAsync(int productId, IFormFile file, IBlobStorageService blobStorageService, string containerName, int userId, bool isAdmin)
     {
         var product = await _context.Products
             .FirstOrDefaultAsync(p => p.Id == productId && !p.IsDeleted);
 
         if (product is null)
             throw new NotFoundException($"Product with id {productId} was not found.");
+
+        await EnsureOwnsProductAsync(productId, userId, isAdmin);
 
         var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
         var blobName = $"{productId}/{Guid.NewGuid()}{extension}";
@@ -332,13 +393,15 @@ public class ProductService : IProductService
         return url;
     }
 
-    public async Task DeleteImageAsync(int productId, IBlobStorageService blobStorageService, string containerName)
+    public async Task DeleteImageAsync(int productId, IBlobStorageService blobStorageService, string containerName, int userId, bool isAdmin)
     {
         var product = await _context.Products
             .FirstOrDefaultAsync(p => p.Id == productId && !p.IsDeleted);
 
         if (product is null)
             throw new NotFoundException($"Product with id {productId} was not found.");
+
+        await EnsureOwnsProductAsync(productId, userId, isAdmin);
 
         if (!string.IsNullOrEmpty(product.ImageUrl))
             await blobStorageService.DeleteAsync(product.ImageUrl, containerName);
@@ -378,8 +441,11 @@ public class ProductService : IProductService
             .GroupBy(c => NormalizeKey(c.Name))
             .ToDictionary(g => g.Key, g => g.First().Id);
 
+        var storeId = await GetDefaultStoreIdAsync(cancellationToken);
+
         var existingSkuList = await _context.Products
             .AsNoTracking()
+            .Where(p => p.StoreId == storeId)
             .Select(p => p.SKU)
             .ToListAsync(cancellationToken);
 
@@ -448,6 +514,7 @@ public class ProductService : IProductService
                 Price = price,
                 Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
                 CategoryId = categoryId!.Value,
+                StoreId = storeId,
                 CreatedAt = now,
                 IsDeleted = false
             };
@@ -490,6 +557,9 @@ public class ProductService : IProductService
             ImageUrl = p.ImageUrl,
             CategoryId = p.CategoryId,
             CategoryName = p.Category.Name,
+            StoreId = p.StoreId,
+            StoreName = p.Store.Name,
+            StoreSlug = p.Store.Slug,
             StockQuantity = p.Inventory == null ? 0 : p.Inventory.Quantity,
             AverageRating = p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
             ReviewCount = p.Reviews.Count(),

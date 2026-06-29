@@ -66,11 +66,11 @@ public class ReviewService : IReviewService
             throw new NotFoundException($"Product with ID {request.ProductId} was not found.");
 
         // Purchase validation — must have a delivered order containing this product
-        var hasPurchased = await _context.OrderItems
-            .AnyAsync(oi =>
-                oi.ProductId == request.ProductId &&
-                oi.Order.UserId == currentUserId &&
-                oi.Order.Status == OrderStatus.Delivered);
+        var hasPurchased = await _context.StoreOrderItems
+            .AnyAsync(soi =>
+                soi.ProductId == request.ProductId &&
+                soi.StoreOrder.Order.UserId == currentUserId &&
+                soi.StoreOrder.Status == OrderStatus.Delivered);
 
         if (!hasPurchased)
             throw new ForbiddenException("You can only review products you have received.");

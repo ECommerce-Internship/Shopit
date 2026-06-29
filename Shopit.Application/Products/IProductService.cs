@@ -12,17 +12,17 @@ public interface IProductService
 
     Task<ProductResponse> GetByIdAsync(int id);
 
-    Task<ProductResponse> CreateAsync(CreateProductRequest request);
+    Task<ProductResponse> CreateAsync(CreateProductRequest request, int userId, bool isAdmin);
 
-    Task<ProductResponse> UpdateAsync(int id, UpdateProductRequest request);
+    Task<ProductResponse> UpdateAsync(int id, UpdateProductRequest request, int userId, bool isAdmin);
 
-    Task DeleteAsync(int id);
+    Task DeleteAsync(int id, int userId, bool isAdmin);
 
     Task<ImportResultDto> ImportAsync(Stream fileStream, CancellationToken cancellationToken = default);
 
-    Task<string> UploadImageAsync(int productId, IFormFile file, IBlobStorageService blobStorageService, string containerName);
+    Task<string> UploadImageAsync(int productId, IFormFile file, IBlobStorageService blobStorageService, string containerName, int userId, bool isAdmin);
 
-    Task DeleteImageAsync(int productId, IBlobStorageService blobStorageService, string containerName);
+    Task DeleteImageAsync(int productId, IBlobStorageService blobStorageService, string containerName, int userId, bool isAdmin);
 
     /// <summary>
     /// Generates AI marketing-content suggestions for an existing product.

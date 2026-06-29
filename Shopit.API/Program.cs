@@ -81,7 +81,7 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "Bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Enter your JWT token. Example: Bearer eyJhbGci..."
+        Description = "Paste ONLY your JWT access token (the eyJ... value). Do NOT type 'Bearer' — Swagger adds it automatically."
     });
 
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -183,6 +183,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IStoreService, StoreService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<ILowStockAlertService, LowStockAlertService>();

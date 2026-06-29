@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using Shopit.Application.Interfaces;
@@ -17,7 +18,7 @@ public class JwtTokenService : IJwtTokenService
         _configuration = configuration;
     }
 
-    public string GenerateAccessToken(User user)
+    public string GenerateAccessToken(User user, IEnumerable<int> storeIds)
     {
         var jwtSettings = _configuration.GetSection("JwtSettings");
 
@@ -32,6 +33,13 @@ public class JwtTokenService : IJwtTokenService
             new Claim(JwtRegisteredClaimNames.Email, user.Email),
             new Claim(ClaimTypes.Role, user.Role.ToString()),
         });
+
+        // The store IDs a user owns (sellers only; empty array otherwise). Emitted as a real JSON
+        // array so the frontend can read role + StoreIds for marketplace routing (SCRUM-144).
+        claims.AddClaim(new Claim(
+            "StoreIds",
+            JsonSerializer.Serialize(storeIds),
+            JsonClaimValueTypes.JsonArray));
 
         var tokenDescriptor = new SecurityTokenDescriptor
         {

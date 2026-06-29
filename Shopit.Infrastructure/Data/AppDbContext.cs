@@ -17,7 +17,9 @@ public class AppDbContext : DbContext
     public DbSet<Cart> Carts => Set<Cart>();
     public DbSet<CartItem> CartItems => Set<CartItem>();
     public DbSet<Order> Orders => Set<Order>();
-    public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<Store> Stores => Set<Store>();
+    public DbSet<StoreOrder> StoreOrders => Set<StoreOrder>();
+    public DbSet<StoreOrderItem> StoreOrderItems => Set<StoreOrderItem>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Review> Reviews => Set<Review>();
     public DbSet<UserExternalLogin> UserExternalLogins => Set<UserExternalLogin>();
@@ -94,17 +96,54 @@ public class AppDbContext : DbContext
             .WithMany(p => p.CartItems)
             .HasForeignKey(ci => ci.ProductId);
 
-        // Order -> OrderItems (one-to-many)
-        modelBuilder.Entity<OrderItem>()
-            .HasOne(oi => oi.Order)
-            .WithMany(o => o.OrderItems)
-            .HasForeignKey(oi => oi.OrderId);
+        // User -> Stores (one-to-many, owner)
+        modelBuilder.Entity<Store>()
+            .HasOne(s => s.Owner)
+            .WithMany(u => u.Stores)
+            .HasForeignKey(s => s.OwnerUserId)
+            .OnDelete(DeleteBehavior.Restrict);
 
-        // Product -> OrderItems (one-to-many)
-        modelBuilder.Entity<OrderItem>()
-            .HasOne(oi => oi.Product)
-            .WithMany(p => p.OrderItems)
-            .HasForeignKey(oi => oi.ProductId);
+        // Store -> Products (one-to-many)
+        modelBuilder.Entity<Product>()
+            .HasOne(p => p.Store)
+            .WithMany(s => s.Products)
+            .HasForeignKey(p => p.StoreId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Store -> Coupons (one-to-many, nullable: null = platform-wide)
+        modelBuilder.Entity<Coupon>()
+            .HasOne(c => c.Store)
+            .WithMany(s => s.Coupons)
+            .HasForeignKey(c => c.StoreId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // Order -> StoreOrders (one-to-many)
+        modelBuilder.Entity<StoreOrder>()
+            .HasOne(so => so.Order)
+            .WithMany(o => o.StoreOrders)
+            .HasForeignKey(so => so.OrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Store -> StoreOrders (one-to-many)
+        modelBuilder.Entity<StoreOrder>()
+            .HasOne(so => so.Store)
+            .WithMany(s => s.StoreOrders)
+            .HasForeignKey(so => so.StoreId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // StoreOrder -> StoreOrderItems (one-to-many)
+        modelBuilder.Entity<StoreOrderItem>()
+            .HasOne(soi => soi.StoreOrder)
+            .WithMany(so => so.StoreOrderItems)
+            .HasForeignKey(soi => soi.StoreOrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Product -> StoreOrderItems (one-to-many)
+        modelBuilder.Entity<StoreOrderItem>()
+            .HasOne(soi => soi.Product)
+            .WithMany(p => p.StoreOrderItems)
+            .HasForeignKey(soi => soi.ProductId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Order <-> Payment (one-to-one)
         modelBuilder.Entity<Payment>()
@@ -117,13 +156,16 @@ public class AppDbContext : DbContext
             .HasIndex(u => u.Email).IsUnique();
 
         modelBuilder.Entity<Product>()
-            .HasIndex(p => p.SKU).IsUnique();
+            .HasIndex(p => new { p.StoreId, p.SKU }).IsUnique();
 
         modelBuilder.Entity<Coupon>()
             .HasIndex(c => c.Code).IsUnique();
 
         modelBuilder.Entity<Category>()
             .HasIndex(c => c.Slug).IsUnique();
+
+        modelBuilder.Entity<Store>()
+            .HasIndex(s => s.Slug).IsUnique();
 
         modelBuilder.Entity<Review>()
             .HasIndex(r => new { r.UserId, r.ProductId }).IsUnique();
@@ -138,11 +180,23 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Order>()
             .Property(o => o.TotalAmount).HasPrecision(10, 2);
 
-        modelBuilder.Entity<OrderItem>()
-            .Property(oi => oi.UnitPrice).HasPrecision(10, 2);
+        modelBuilder.Entity<StoreOrderItem>()
+            .Property(soi => soi.UnitPrice).HasPrecision(10, 2);
 
-        modelBuilder.Entity<OrderItem>()
-            .Property(oi => oi.Subtotal).HasPrecision(10, 2);
+        modelBuilder.Entity<StoreOrderItem>()
+            .Property(soi => soi.Subtotal).HasPrecision(10, 2);
+
+        modelBuilder.Entity<StoreOrder>()
+            .Property(so => so.SubTotal).HasPrecision(10, 2);
+
+        modelBuilder.Entity<StoreOrder>()
+            .Property(so => so.CommissionAmount).HasPrecision(10, 2);
+
+        modelBuilder.Entity<StoreOrder>()
+            .Property(so => so.SellerNetAmount).HasPrecision(10, 2);
+
+        modelBuilder.Entity<Store>()
+            .Property(s => s.CommissionRate).HasPrecision(5, 4);
 
         modelBuilder.Entity<Payment>()
             .Property(p => p.Amount).HasPrecision(10, 2);

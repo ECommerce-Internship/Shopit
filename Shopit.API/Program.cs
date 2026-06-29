@@ -164,6 +164,10 @@ builder.Services.Configure<SftpSettings>(builder.Configuration.GetSection(SftpSe
 
 builder.Services.AddRateLimiter(options =>
 {
+    // SCRUM-110: the rate limiter defaults to 503 Service Unavailable on
+    // rejection; acceptance criteria require 429 Too Many Requests instead.
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
@@ -180,6 +184,20 @@ builder.Services.AddRateLimiter(options =>
         limiterOptions.Window = TimeSpan.FromMinutes(1);
         limiterOptions.PermitLimit = 5;
     });
+
+    // Named policy required by [EnableRateLimiting("Chat")] on ChatController.
+    // Per-user (JWT NameIdentifier claim) sliding window, since the chat endpoint
+    // calls Gemini on every request and may trigger multiple tool calls per turn -
+    // a direct path to runaway API costs/abuse if left uncapped per caller (SCRUM-110).
+    options.AddPolicy("Chat", httpContext =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 4,
+                PermitLimit = 20
+            }));
 });
 
 builder.Services.AddScoped<IAuthService, AuthService>();

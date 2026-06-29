@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using Shopit.Application.Chat;
 
@@ -29,6 +30,7 @@ public class ChatController : ControllerBase
     /// from the request body — and used to scope and filter tool access.
     /// </summary>
     [HttpPost]
+    [EnableRateLimiting("Chat")]
     [ProducesResponseType(typeof(ChatResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -37,9 +39,6 @@ public class ChatController : ControllerBase
         [FromBody] ChatRequest request,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Message))
-            return BadRequest(new[] { "Message is required." });
-
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         var role = User.FindFirstValue(ClaimTypes.Role)!;
 

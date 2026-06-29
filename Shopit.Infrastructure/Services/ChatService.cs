@@ -17,7 +17,7 @@ namespace Shopit.Infrastructure.Services;
 /// returns a plain text reply. Conversation state is kept in memory for the
 /// duration of this single request only.
 ///
-/// Security model (see SCRUM-106):
+/// Security model (see SCRUM-106, extended in SCRUM-108):
 ///   1. Tool filtering — <see cref="GetToolsForRole"/> strips admin-only tools
 ///      out of functionDeclarations entirely for non-admin roles, so the model
 ///      cannot call what it cannot see.
@@ -25,6 +25,15 @@ namespace Shopit.Infrastructure.Services;
 ///      (<see cref="IdentityInjectedTools"/>), the userId argument is always
 ///      overwritten with the value from the caller's JWT claims before the
 ///      tool executes, regardless of what the model supplied.
+///   3. Hidden parameters — for self-scoped customer tools (add_to_cart,
+///      view_cart, get_my_orders), the underlying MCP tool method still takes
+///      a "userId" C# parameter (the MCP SDK only excludes parameters from the
+///      schema for special bound types like CancellationToken, not plain int),
+///      but that parameter is stripped out of the JSON schema sent to Gemini
+///      via <see cref="RemoveHiddenParameters"/> so the model never sees or
+///      sets it. The real value is still supplied via identity injection at
+///      call time. get_customer_orders is intentionally NOT in this list —
+///      its userId stays visible/admin-settable by design.
 /// </summary>
 public class ChatService : IChatService
 {
@@ -40,8 +49,9 @@ public class ChatService : IChatService
     private static readonly HashSet<string> IdentityInjectedTools = new(StringComparer.OrdinalIgnoreCase)
     {
         "get_customer_orders",
-        // add_to_cart / view_cart are not yet implemented as MCP tools — add
-        // here once they exist, per SCRUM-106's customer tool list.
+        "add_to_cart",
+        "view_cart",
+        "get_my_orders",
     };
 
     /// <summary>
@@ -53,9 +63,41 @@ public class ChatService : IChatService
     private static readonly HashSet<string> CustomerAllowedTools = new(StringComparer.OrdinalIgnoreCase)
     {
         "search_products",
-        "get_customer_orders",
-        // add_to_cart / view_cart per SCRUM-106 — not yet implemented as MCP tools.
+        "add_to_cart",
+        "view_cart",
+        "get_my_orders",
     };
+
+    /// <summary>
+    /// Tools where an Admin caller's own "userId" argument is honored as-is,
+    /// rather than being overwritten by identity injection. Currently just
+    /// get_customer_orders, so an Admin can look up any customer's orders by
+    /// ID. Non-admin callers are unaffected by this set — identity injection
+    /// still always overrides their "userId" for any tool in
+    /// IdentityInjectedTools, so a non-admin can never spoof another user's ID
+    /// here either.
+    /// </summary>
+    private static readonly HashSet<string> AdminOverridableTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "get_customer_orders",
+    };
+
+    /// <summary>
+    /// Per SCRUM-108: tools whose schema sent to Gemini must have specific
+    /// parameter names stripped out entirely, even though the underlying MCP
+    /// tool method still accepts them (and identity injection still supplies
+    /// them at call time). Used for self-scoped tools where "userId" must
+    /// never be visible to or settable by the model.
+    /// get_customer_orders is deliberately excluded — its userId stays
+    /// visible/admin-settable by design.
+    /// </summary>
+    private static readonly Dictionary<string, HashSet<string>> HiddenParametersByTool =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["add_to_cart"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "userId" },
+            ["view_cart"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "userId" },
+            ["get_my_orders"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "userId" },
+        };
 
     private const string AdminRole = "Admin";
 
@@ -153,7 +195,7 @@ public class ChatService : IChatService
             // This is delegated to a pure, separately-testable method so the
             // override behavior can be unit tested without needing a real
             // MCP connection or HTTP mocking.
-            var argsObject = ApplyIdentityInjection(functionName, argsNode, userId);
+            var argsObject = ApplyIdentityInjection(functionName, argsNode, userId, role);
 
             var arguments = ConvertArgsToDictionary(argsObject);
 
@@ -218,21 +260,35 @@ public class ChatService : IChatService
     /// after overwriting any identity-related argument the model supplied.
     ///
     /// For tools in <see cref="IdentityInjectedTools"/> (tools that operate on
-    /// the caller's own data, e.g. get_customer_orders), the "userId" argument
-    /// is always replaced with <paramref name="callerUserId"/> — taken from the
-    /// caller's JWT claims — regardless of what value the model supplied. This
-    /// is the backstop defence from SCRUM-106: even if tool filtering somehow
-    /// let an identity-sensitive tool through, the model can never read another
-    /// user's data because it cannot control whose userId is actually used.
+    /// the caller's own data, e.g. get_customer_orders, add_to_cart, view_cart,
+    /// get_my_orders), the "userId" argument is always replaced with
+    /// <paramref name="callerUserId"/> — taken from the caller's JWT claims —
+    /// regardless of what value the model supplied (or, for the three
+    /// SCRUM-108 tools, regardless of the fact the model never even sees
+    /// "userId" as an option, since it's hidden from the schema). This is the
+    /// backstop defence from SCRUM-106: even if tool filtering somehow let an
+    /// identity-sensitive tool through, the model can never read or modify
+    /// another user's data because it cannot control whose userId is actually
+    /// used.
     ///
     /// Pure and side-effect free so this exact security behavior can be unit
     /// tested without a real MCP connection.
+    ///
+    /// Exception: for tools in <see cref="AdminOverridableTools"/> (currently
+    /// just get_customer_orders), an Admin caller's own "userId" argument is
+    /// honored as-is instead of being overwritten, so an Admin can look up any
+    /// customer's orders by ID. Non-admin callers still always have "userId"
+    /// overridden for these tools, so a non-admin can never spoof another
+    /// user's ID this way.
     /// </summary>
-    public static JsonObject ApplyIdentityInjection(string toolName, JsonObject? modelSuppliedArgs, int callerUserId)
+    public static JsonObject ApplyIdentityInjection(string toolName, JsonObject? modelSuppliedArgs, int callerUserId, string callerRole)
     {
         var args = modelSuppliedArgs?.DeepClone() as JsonObject ?? new JsonObject();
 
-        if (IdentityInjectedTools.Contains(toolName))
+        var isAdminOverride = AdminOverridableTools.Contains(toolName)
+            && string.Equals(callerRole, AdminRole, StringComparison.OrdinalIgnoreCase);
+
+        if (IdentityInjectedTools.Contains(toolName) && !isAdminOverride)
             args["userId"] = callerUserId;
 
         return args;
@@ -364,6 +420,13 @@ public class ChatService : IChatService
             var schemaNode = JsonNode.Parse(tool.JsonSchema.GetRawText()) as JsonObject ?? new JsonObject();
             var sanitized = SanitizeSchemaForGemini(schemaNode) as JsonObject ?? new JsonObject();
 
+            // SCRUM-108: strip any parameters configured in HiddenParametersByTool
+            // (currently just "userId" on add_to_cart / view_cart / get_my_orders)
+            // out of the schema Gemini sees, after general sanitization. The real
+            // value is still supplied later via ApplyIdentityInjection.
+            if (HiddenParametersByTool.TryGetValue(tool.Name, out var hiddenParams))
+                RemoveHiddenParameters(sanitized, hiddenParams);
+
             declarations.Add(new JsonObject
             {
                 ["name"] = tool.Name,
@@ -372,6 +435,33 @@ public class ChatService : IChatService
             });
         }
         return declarations;
+    }
+
+    /// <summary>
+    /// Removes the given parameter names from a (already-sanitized) Gemini
+    /// function-parameters schema object, in place: deletes each name from
+    /// "properties" and from the "required" array if present. Per SCRUM-108,
+    /// this is how "userId" is kept off the schema sent to Gemini for
+    /// self-scoped tools (add_to_cart, view_cart, get_my_orders) even though
+    /// the underlying MCP tool method still declares the parameter.
+    /// </summary>
+    private static void RemoveHiddenParameters(JsonObject schema, HashSet<string> parameterNames)
+    {
+        if (schema["properties"] is JsonObject properties)
+        {
+            foreach (var name in parameterNames)
+                properties.Remove(name);
+        }
+
+        if (schema["required"] is JsonArray required)
+        {
+            for (var i = required.Count - 1; i >= 0; i--)
+            {
+                var requiredName = required[i]?.GetValue<string>();
+                if (requiredName is not null && parameterNames.Contains(requiredName))
+                    required.RemoveAt(i);
+            }
+        }
     }
 
     /// <summary>

@@ -14,6 +14,9 @@ public class Coupon
     public DateTime? ExpiresAt { get; set; }
     public bool IsActive { get; set; } = true;
 
+    public int? StoreId { get; set; }
+    public Store? Store { get; set; }
+
     public ICollection<Cart> Carts { get; set; } = new List<Cart>();
     public ICollection<Order> Orders { get; set; } = new List<Order>();
 }

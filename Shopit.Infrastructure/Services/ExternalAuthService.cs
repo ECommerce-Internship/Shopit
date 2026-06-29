@@ -106,7 +106,10 @@ public class ExternalAuthService : IExternalAuthService
         }
 
         // Step 5: Issue JWT + refresh token
-        var accessToken = _jwtTokenService.GenerateAccessToken(user);
+        var storeIds = user.Role == UserRole.Seller
+            ? await _context.Stores.Where(s => s.OwnerUserId == user.Id).Select(s => s.Id).ToListAsync()
+            : new List<int>();
+        var accessToken = _jwtTokenService.GenerateAccessToken(user, storeIds);
         var expiresIn = int.Parse(_config["JwtSettings:ExpiryMinutes"] ?? "15") * 60;
 
         var refreshToken = new RefreshToken

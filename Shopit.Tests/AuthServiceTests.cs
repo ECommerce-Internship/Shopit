@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Moq;
 using Shopit.Application.DTOs.Auth;
@@ -22,6 +25,7 @@ public class AuthServiceTests
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         return new AppDbContext(options);
     }
@@ -43,13 +47,104 @@ public class AuthServiceTests
     private IJwtTokenService CreateJwtService()
     {
         var mock = new Mock<IJwtTokenService>();
-        mock.Setup(j => j.GenerateAccessToken(It.IsAny<User>()))
+        mock.Setup(j => j.GenerateAccessToken(It.IsAny<User>(), It.IsAny<IEnumerable<int>>()))
             .Returns("mocked-access-token");
         return mock.Object;
     }
 
     private AuthService CreateService(AppDbContext db)
-        => new AuthService(db, CreateJwtService(), CreateConfig());
+        => new AuthService(db, CreateJwtService(), CreateConfig(), new StoreService(db, Mock.Of<ICacheService>()));
+
+    // Builds AuthService with a REAL JwtTokenService so issued tokens can be decoded (SCRUM-144).
+    private AuthService CreateServiceRealJwt(AppDbContext db)
+        => new AuthService(db, new JwtTokenService(CreateConfig()), CreateConfig(), new StoreService(db, Mock.Of<ICacheService>()));
+
+    private static List<int> DecodeStoreIds(string token)
+    {
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
+        return jwt.Claims.Where(c => c.Type == "StoreIds").Select(c => int.Parse(c.Value)).ToList();
+    }
+
+    [Fact]
+    public async Task RegisterSellerAsync_TokenCarriesNewStoreId()
+    {
+        var db = CreateDb();
+        var service = CreateServiceRealJwt(db);
+
+        var result = await service.RegisterSellerAsync(new RegisterSellerRequest
+        {
+            FirstName = "S", LastName = "S", Email = "claim-seller@s.com", Password = "Password123!", StoreName = "Claim Store"
+        });
+
+        var store = await db.Stores.SingleAsync(s => s.OwnerUserId == result.User.Id);
+        DecodeStoreIds(result.AccessToken).Should().Contain(store.Id);
+    }
+
+    [Fact]
+    public async Task RegisterAsync_Customer_TokenHasEmptyStoreIds()
+    {
+        var db = CreateDb();
+        var service = CreateServiceRealJwt(db);
+
+        var result = await service.RegisterAsync(new RegisterRequest
+        {
+            FirstName = "C", LastName = "C", Email = "claim-customer@s.com", Password = "Password123!"
+        });
+
+        DecodeStoreIds(result.AccessToken).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task RegisterSellerAsync_ValidRequest_CreatesSellerAndPendingStore()
+    {
+        var db = CreateDb();
+        var service = CreateService(db);
+
+        var result = await service.RegisterSellerAsync(new RegisterSellerRequest
+        {
+            FirstName = "Sam",
+            LastName = "Seller",
+            Email = "sam@store.com",
+            Password = "Password123!",
+            StoreName = "Sam's Shop",
+            StoreDescription = "Best deals"
+        });
+
+        result.Should().NotBeNull();
+        result.User.Role.Should().Be(UserRole.Seller.ToString());
+        result.AccessToken.Should().NotBeNullOrEmpty();
+        result.RefreshToken.Should().NotBeNullOrEmpty();
+
+        var user = await db.Users.SingleAsync(u => u.Email == "sam@store.com");
+        user.Role.Should().Be(UserRole.Seller);
+
+        var store = await db.Stores.SingleAsync(s => s.OwnerUserId == user.Id);
+        store.Status.Should().Be(StoreStatus.Pending);
+        store.Name.Should().Be("Sam's Shop");
+    }
+
+    [Fact]
+    public async Task RegisterSellerAsync_DuplicateEmail_ThrowsConflictException()
+    {
+        var db = CreateDb();
+        var service = CreateService(db);
+
+        var request = new RegisterSellerRequest
+        {
+            FirstName = "Sam",
+            LastName = "Seller",
+            Email = "dupe-seller@store.com",
+            Password = "Password123!",
+            StoreName = "Sam's Shop"
+        };
+
+        await service.RegisterSellerAsync(request);
+
+        var act = async () => await service.RegisterSellerAsync(request);
+
+        await act.Should().ThrowAsync<ConflictException>()
+            .WithMessage("*already registered*");
+    }
 
     [Fact]
     public async Task RegisterAsync_ValidRequest_ReturnsAuthResponse()

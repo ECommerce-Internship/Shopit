@@ -23,6 +23,10 @@ public class CreateProductRequestValidator : AbstractValidator<CreateProductRequ
             .GreaterThan(0)
             .WithMessage("CategoryId must be greater than 0.");
 
+        RuleFor(x => x.StoreId)
+            .GreaterThan(0)
+            .WithMessage("StoreId must be greater than 0.");
+
         RuleFor(x => x.InitialStock)
             .GreaterThanOrEqualTo(0)
             .WithMessage("Initial stock must be greater than or equal to 0.");

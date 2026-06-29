@@ -18,6 +18,7 @@ public class AuthController : ControllerBase
     private readonly IAuthService _authService;
     private readonly IExternalAuthService _externalAuthService;
     private readonly IValidator<RegisterRequest> _registerValidator;
+    private readonly IValidator<RegisterSellerRequest> _registerSellerValidator;
     private readonly IValidator<LoginRequest> _loginValidator;
     private readonly IValidator<UpdateProfileRequest> _updateProfileValidator;
     private readonly IValidator<ChangePasswordRequest> _changePasswordValidator;
@@ -26,6 +27,7 @@ public class AuthController : ControllerBase
         IAuthService authService,
         IExternalAuthService externalAuthService,
         IValidator<RegisterRequest> registerValidator,
+        IValidator<RegisterSellerRequest> registerSellerValidator,
         IValidator<LoginRequest> loginValidator,
         IValidator<UpdateProfileRequest> updateProfileValidator,
         IValidator<ChangePasswordRequest> changePasswordValidator)
@@ -33,6 +35,7 @@ public class AuthController : ControllerBase
         _authService = authService;
         _externalAuthService = externalAuthService;
         _registerValidator = registerValidator;
+        _registerSellerValidator = registerSellerValidator;
         _loginValidator = loginValidator;
         _updateProfileValidator = updateProfileValidator;
         _changePasswordValidator = changePasswordValidator;
@@ -50,6 +53,20 @@ public class AuthController : ControllerBase
 
         var response = await _authService.RegisterAsync(request);
         return CreatedAtAction(nameof(Register), response);
+    }
+
+    [HttpPost("register-seller")]
+    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> RegisterSeller([FromBody] RegisterSellerRequest request)
+    {
+        var validation = await _registerSellerValidator.ValidateAsync(request);
+        if (!validation.IsValid)
+            return BadRequest(validation.Errors.Select(e => e.ErrorMessage));
+
+        var response = await _authService.RegisterSellerAsync(request);
+        return CreatedAtAction(nameof(RegisterSeller), response);
     }
 
     [HttpPost("login")]

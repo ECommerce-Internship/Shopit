@@ -17,7 +17,7 @@ namespace Shopit.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.8")
+                .HasAnnotation("ProductVersion", "10.0.9")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -135,6 +135,9 @@ namespace Shopit.Infrastructure.Migrations
                         .HasPrecision(10, 2)
                         .HasColumnType("numeric(10,2)");
 
+                    b.Property<int?>("StoreId")
+                        .HasColumnType("integer");
+
                     b.Property<int>("UsageCount")
                         .HasColumnType("integer");
 
@@ -145,6 +148,8 @@ namespace Shopit.Infrastructure.Migrations
 
                     b.HasIndex("Code")
                         .IsUnique();
+
+                    b.HasIndex("StoreId");
 
                     b.ToTable("Coupons");
                 });
@@ -203,9 +208,6 @@ namespace Shopit.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
                     b.Property<decimal>("TotalAmount")
                         .HasPrecision(10, 2)
                         .HasColumnType("numeric(10,2)");
@@ -220,44 +222,6 @@ namespace Shopit.Infrastructure.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("Orders");
-                });
-
-            modelBuilder.Entity("Shopit.Domain.Entities.OrderItem", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("OrderId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("ProductId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ProductNameSnapshot")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("Quantity")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("Subtotal")
-                        .HasPrecision(10, 2)
-                        .HasColumnType("numeric(10,2)");
-
-                    b.Property<decimal>("UnitPrice")
-                        .HasPrecision(10, 2)
-                        .HasColumnType("numeric(10,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrderId");
-
-                    b.HasIndex("ProductId");
-
-                    b.ToTable("OrderItems");
                 });
 
             modelBuilder.Entity("Shopit.Domain.Entities.Payment", b =>
@@ -330,11 +294,14 @@ namespace Shopit.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int>("StoreId")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CategoryId");
 
-                    b.HasIndex("SKU")
+                    b.HasIndex("StoreId", "SKU")
                         .IsUnique();
 
                     b.ToTable("Products");
@@ -402,6 +369,124 @@ namespace Shopit.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("Reviews");
+                });
+
+            modelBuilder.Entity("Shopit.Domain.Entities.Store", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("CommissionRate")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("numeric(5,4)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("OwnerUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("Slug")
+                        .IsUnique();
+
+                    b.ToTable("Stores");
+                });
+
+            modelBuilder.Entity("Shopit.Domain.Entities.StoreOrder", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("CommissionAmount")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("SellerNetAmount")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StoreId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("SubTotal")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId");
+
+                    b.HasIndex("StoreId");
+
+                    b.ToTable("StoreOrders");
+                });
+
+            modelBuilder.Entity("Shopit.Domain.Entities.StoreOrderItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProductNameSnapshot")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StoreOrderId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("Subtotal")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("StoreOrderId");
+
+                    b.ToTable("StoreOrderItems");
                 });
 
             modelBuilder.Entity("Shopit.Domain.Entities.User", b =>
@@ -527,6 +612,16 @@ namespace Shopit.Infrastructure.Migrations
                     b.Navigation("ParentCategory");
                 });
 
+            modelBuilder.Entity("Shopit.Domain.Entities.Coupon", b =>
+                {
+                    b.HasOne("Shopit.Domain.Entities.Store", "Store")
+                        .WithMany("Coupons")
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Store");
+                });
+
             modelBuilder.Entity("Shopit.Domain.Entities.Inventory", b =>
                 {
                     b.HasOne("Shopit.Domain.Entities.Product", "Product")
@@ -555,25 +650,6 @@ namespace Shopit.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("Shopit.Domain.Entities.OrderItem", b =>
-                {
-                    b.HasOne("Shopit.Domain.Entities.Order", "Order")
-                        .WithMany("OrderItems")
-                        .HasForeignKey("OrderId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Shopit.Domain.Entities.Product", "Product")
-                        .WithMany("OrderItems")
-                        .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Order");
-
-                    b.Navigation("Product");
-                });
-
             modelBuilder.Entity("Shopit.Domain.Entities.Payment", b =>
                 {
                     b.HasOne("Shopit.Domain.Entities.Order", "Order")
@@ -593,7 +669,15 @@ namespace Shopit.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Shopit.Domain.Entities.Store", "Store")
+                        .WithMany("Products")
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.Navigation("Category");
+
+                    b.Navigation("Store");
                 });
 
             modelBuilder.Entity("Shopit.Domain.Entities.RefreshToken", b =>
@@ -624,6 +708,55 @@ namespace Shopit.Infrastructure.Migrations
                     b.Navigation("Product");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Shopit.Domain.Entities.Store", b =>
+                {
+                    b.HasOne("Shopit.Domain.Entities.User", "Owner")
+                        .WithMany("Stores")
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Owner");
+                });
+
+            modelBuilder.Entity("Shopit.Domain.Entities.StoreOrder", b =>
+                {
+                    b.HasOne("Shopit.Domain.Entities.Order", "Order")
+                        .WithMany("StoreOrders")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Shopit.Domain.Entities.Store", "Store")
+                        .WithMany("StoreOrders")
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Order");
+
+                    b.Navigation("Store");
+                });
+
+            modelBuilder.Entity("Shopit.Domain.Entities.StoreOrderItem", b =>
+                {
+                    b.HasOne("Shopit.Domain.Entities.Product", "Product")
+                        .WithMany("StoreOrderItems")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Shopit.Domain.Entities.StoreOrder", "StoreOrder")
+                        .WithMany("StoreOrderItems")
+                        .HasForeignKey("StoreOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+
+                    b.Navigation("StoreOrder");
                 });
 
             modelBuilder.Entity("Shopit.Domain.Entities.UserExternalLogin", b =>
@@ -658,9 +791,9 @@ namespace Shopit.Infrastructure.Migrations
 
             modelBuilder.Entity("Shopit.Domain.Entities.Order", b =>
                 {
-                    b.Navigation("OrderItems");
-
                     b.Navigation("Payment");
+
+                    b.Navigation("StoreOrders");
                 });
 
             modelBuilder.Entity("Shopit.Domain.Entities.Product", b =>
@@ -669,9 +802,23 @@ namespace Shopit.Infrastructure.Migrations
 
                     b.Navigation("Inventory");
 
-                    b.Navigation("OrderItems");
-
                     b.Navigation("Reviews");
+
+                    b.Navigation("StoreOrderItems");
+                });
+
+            modelBuilder.Entity("Shopit.Domain.Entities.Store", b =>
+                {
+                    b.Navigation("Coupons");
+
+                    b.Navigation("Products");
+
+                    b.Navigation("StoreOrders");
+                });
+
+            modelBuilder.Entity("Shopit.Domain.Entities.StoreOrder", b =>
+                {
+                    b.Navigation("StoreOrderItems");
                 });
 
             modelBuilder.Entity("Shopit.Domain.Entities.User", b =>
@@ -685,6 +832,8 @@ namespace Shopit.Infrastructure.Migrations
                     b.Navigation("RefreshTokens");
 
                     b.Navigation("Reviews");
+
+                    b.Navigation("Stores");
                 });
 #pragma warning restore 612, 618
         }

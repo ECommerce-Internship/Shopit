@@ -14,5 +14,7 @@ public class CreateProductRequest
 
     public int CategoryId { get; set; }
 
+    public int StoreId { get; set; }
+
     public int InitialStock { get; set; }
 }

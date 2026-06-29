@@ -10,4 +10,5 @@ public class OrderSummaryResponse
     public DateTime CreatedAt { get; set; }
     public int ItemCount { get; set; }
     public string? PaymentStatus { get; set; }
+    public List<StoreOrderSummaryResponse> StoreOrders { get; set; } = new();
 }

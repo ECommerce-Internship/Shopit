@@ -94,18 +94,4 @@ public class OrderController : ControllerBase
         var result = await _orderService.GetAllOrdersAsync(page, pageSize, status, from, to);
         return Ok(result);
     }
-
-    [HttpPut]
-    [Route("api/v{version:apiVersion}/admin/orders/{id:int}/status")]
-    [Authorize(Roles = "Admin")]
-    [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> UpdateOrderStatus(int id, [FromBody] UpdateOrderStatusRequest request)
-    {
-        var result = await _orderService.UpdateOrderStatusAsync(id, request);
-        return Ok(result);
-    }
 }

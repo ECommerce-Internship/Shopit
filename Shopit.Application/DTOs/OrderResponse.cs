@@ -9,4 +9,5 @@ public class OrderResponse
     public string ShippingAddress { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public List<OrderItemResponse> Items { get; set; } = new();
+    public List<StoreOrderResponse> StoreOrders { get; set; } = new();
 }

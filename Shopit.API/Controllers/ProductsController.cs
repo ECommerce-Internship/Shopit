@@ -7,6 +7,7 @@ using Shopit.Application.Common;
 using Shopit.Application.Interfaces;
 using Shopit.Application.Products;
 using Shopit.Application.Products.DTOs;
+using System.Security.Claims;
 using DomainValidationException = Shopit.Domain.Exceptions.ValidationException;
 
 namespace Shopit.API.Controllers;
@@ -37,6 +38,12 @@ public class ProductsController : ControllerBase
         _sftpProductImportService = sftpProductImportService;
     }
 
+    private int GetUserId() =>
+        int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+    private bool IsAdmin() =>
+        User.IsInRole("Admin");
+
     /// <summary>
     /// Gets all products with pagination, filtering, searching, and sorting.
     /// </summary>
@@ -66,13 +73,16 @@ public class ProductsController : ControllerBase
     /// Creates a new product.
     /// </summary>
     [HttpPost]
+    [Authorize(Roles = "Seller,Admin")]
     [ProducesResponseType(typeof(ProductResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<ProductResponse>> Create([FromBody] CreateProductRequest request)
     {
-        var product = await _productService.CreateAsync(request);
+        var product = await _productService.CreateAsync(request, GetUserId(), IsAdmin());
 
         return CreatedAtAction(
             nameof(GetById),
@@ -84,7 +94,7 @@ public class ProductsController : ControllerBase
     /// Imports products from an Excel file.
     /// </summary>
     [HttpPost("import")]
-    //[Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(MaxImportFileSize)]
     [ProducesResponseType(typeof(ImportResultDto), StatusCodes.Status200OK)]
@@ -117,7 +127,7 @@ public class ProductsController : ControllerBase
     /// the configured file does not exist.
     /// </summary>
     [HttpPost("import-from-sftp")]
-    //[Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ImportResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -133,15 +143,18 @@ public class ProductsController : ControllerBase
     /// Updates an existing product.
     /// </summary>
     [HttpPut("{id:int}")]
+    [Authorize(Roles = "Seller,Admin")]
     [ProducesResponseType(typeof(ProductResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<ProductResponse>> Update(
         int id,
         [FromBody] UpdateProductRequest request)
     {
-        var product = await _productService.UpdateAsync(id, request);
+        var product = await _productService.UpdateAsync(id, request, GetUserId(), IsAdmin());
         return Ok(product);
     }
 
@@ -149,11 +162,14 @@ public class ProductsController : ControllerBase
     /// Soft deletes a product.
     /// </summary>
     [HttpDelete("{id:int}")]
+    [Authorize(Roles = "Seller,Admin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(int id)
     {
-        await _productService.DeleteAsync(id);
+        await _productService.DeleteAsync(id, GetUserId(), IsAdmin());
         return NoContent();
     }
 
@@ -161,11 +177,13 @@ public class ProductsController : ControllerBase
     /// Uploads an image for a product. Admin only.
     /// </summary>
     [HttpPost("{id:int}/image")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Seller,Admin")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(MaxImageFileSize)]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UploadImage(int id, IFormFile? file)
     {
@@ -179,7 +197,7 @@ public class ProductsController : ControllerBase
         if (file.Length > MaxImageFileSize)
             throw new DomainValidationException("Image must not exceed 5MB.");
 
-        var url = await _productService.UploadImageAsync(id, file, _blobStorageService, BlobContainerName);
+        var url = await _productService.UploadImageAsync(id, file, _blobStorageService, BlobContainerName, GetUserId(), IsAdmin());
 
         return Ok(new { imageUrl = url });
     }
@@ -210,12 +228,14 @@ public class ProductsController : ControllerBase
     /// Deletes the image of a product. Admin only.
     /// </summary>
     [HttpDelete("{id:int}/image")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Seller,Admin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteImage(int id)
     {
-        await _productService.DeleteImageAsync(id, _blobStorageService, BlobContainerName);
+        await _productService.DeleteImageAsync(id, _blobStorageService, BlobContainerName, GetUserId(), IsAdmin());
         return NoContent();
     }
 }

@@ -15,6 +15,7 @@ public class User
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<Order> Orders { get; set; } = new List<Order>();
+    public ICollection<Store> Stores { get; set; } = new List<Store>();
     public ICollection<Review> Reviews { get; set; } = new List<Review>();
     public ICollection<Cart> Carts { get; set; } = new List<Cart>();
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();

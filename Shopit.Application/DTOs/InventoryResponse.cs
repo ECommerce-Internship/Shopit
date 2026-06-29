@@ -8,5 +8,7 @@ public class InventoryResponse
     public int Quantity { get; set; }
     public int LowStockThreshold { get; set; }
     public bool IsLowStock { get; set; }
+    public int StoreId { get; set; }
+    public string StoreName { get; set; } = string.Empty;
     public DateTime LastUpdated { get; set; }
 }

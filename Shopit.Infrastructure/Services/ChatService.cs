@@ -14,8 +14,16 @@ namespace Shopit.Infrastructure.Services;
 /// Shopit MCP server. Each call connects to the MCP server fresh, lists its
 /// tools, filters them by the caller's role, and runs a function-calling loop
 /// with Gemini (capped at <see cref="MaxIterations"/> turns) until Gemini
-/// returns a plain text reply. Conversation state is kept in memory for the
-/// duration of this single request only.
+/// returns a plain text reply.
+///
+/// Conversation persistence (SCRUM-109): prior turns are loaded from
+/// <see cref="IConversationStore"/> at the start of the request (scoped to
+/// the calling user), the new user message and the final assistant reply are
+/// appended, the combined history is trimmed to <see cref="_maxHistoryEntries"/>
+/// entries, and the result is saved back before returning. This is only done
+/// on the successful path — if Gemini or an MCP tool call fails partway
+/// through, nothing is persisted for that turn, so a failed attempt never
+/// pollutes the stored history with a confusing partial state.
 ///
 /// Security model (see SCRUM-106):
 ///   1. Tool filtering — <see cref="GetToolsForRole"/> strips admin-only tools
@@ -60,18 +68,22 @@ public class ChatService : IChatService
     private const string AdminRole = "Admin";
 
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IConversationStore _conversationStore;
     private readonly ILogger<ChatService> _logger;
     private readonly string _apiKey;
     private readonly string _model;
     private readonly string _mcpExePath;
     private readonly string _mcpWorkingDirectory;
+    private readonly int _maxHistoryEntries;
 
     public ChatService(
         IHttpClientFactory httpClientFactory,
+        IConversationStore conversationStore,
         IConfiguration configuration,
         ILogger<ChatService> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _conversationStore = conversationStore;
         _logger = logger;
         _apiKey = configuration["Gemini:ApiKey"] ?? string.Empty;
         _model = string.IsNullOrWhiteSpace(configuration["Gemini:Model"])
@@ -79,6 +91,7 @@ public class ChatService : IChatService
             : configuration["Gemini:Model"]!;
         _mcpExePath = configuration["Gemini:McpExePath"] ?? string.Empty;
         _mcpWorkingDirectory = configuration["Gemini:McpWorkingDirectory"] ?? string.Empty;
+        _maxHistoryEntries = configuration.GetValue<int?>("Chat:MaxHistoryEntries") ?? 20;
     }
 
     public async Task<ChatResponse> SendMessageAsync(
@@ -98,6 +111,18 @@ public class ChatService : IChatService
             ? Guid.NewGuid().ToString()
             : conversationId;
 
+        // SCRUM-109: load prior history for this conversation, scoped to the
+        // calling user. Returns null for a brand-new conversation, or if the
+        // supplied id doesn't belong to this user — see RedisConversationStore's
+        // key-namespacing for why a cross-user attempt is safe rather than an
+        // error: it simply behaves like a fresh conversation under this id.
+        var history = string.IsNullOrWhiteSpace(conversationId)
+            ? null
+            : await _conversationStore.GetAsync(conversationId, userId, cancellationToken);
+
+        var contents = history?.DeepClone() as JsonArray ?? new JsonArray();
+        contents.Add(BuildUserTextContent(message));
+
         var transport = new StdioClientTransport(new StdioClientTransportOptions
         {
             Name = "Shopit.MCP",
@@ -111,11 +136,6 @@ public class ChatService : IChatService
         var allowedTools = GetToolsForRole(role, allTools);
         var functionDeclarations = BuildFunctionDeclarations(allowedTools);
 
-        var contents = new JsonArray
-        {
-            BuildUserTextContent(message)
-        };
-
         for (var iteration = 0; iteration < MaxIterations; iteration++)
         {
             var responseJson = await CallGeminiAsync(contents, functionDeclarations, cancellationToken);
@@ -127,6 +147,14 @@ public class ChatService : IChatService
                 var text = candidatePart?["text"]?.GetValue<string>();
                 if (string.IsNullOrWhiteSpace(text))
                     throw new ExternalServiceException("The Gemini API returned an empty response.");
+
+                // SCRUM-109: append the final assistant reply (previously
+                // discarded once the request ended) so the next turn's loaded
+                // history includes it, then trim to bound Gemini's context
+                // window before persisting.
+                contents.Add(BuildModelTextContent(text));
+                var trimmedHistory = TrimHistory(contents, _maxHistoryEntries);
+                await _conversationStore.SaveAsync(resolvedConversationId, userId, trimmedHistory, cancellationToken);
 
                 return new ChatResponse(text, resolvedConversationId);
             }
@@ -237,6 +265,35 @@ public class ChatService : IChatService
 
         return args;
     }
+
+    /// <summary>
+    /// Trims a contents history array down to at most <paramref name="maxEntries"/>
+    /// of its most recent entries (SCRUM-109), to keep Gemini's context window
+    /// bounded as a conversation grows over many turns. Each retained entry is
+    /// deep-cloned, since a JsonNode can only have a single parent and the
+    /// source array may still be in use by the caller.
+    ///
+    /// Note: "entries" here are the raw items in the Gemini "contents" array
+    /// (one per user message, model function call, function response, or
+    /// model text reply) rather than a count of whole conversational turns,
+    /// since a single turn can expand into several entries when tool calls are
+    /// involved. A maxEntries of 20 therefore covers somewhat fewer than 20
+    /// full back-and-forth exchanges, which is an intentionally conservative
+    /// approximation in favor of never silently dropping a recent turn.
+    /// </summary>
+    private static JsonArray TrimHistory(JsonArray contents, int maxEntries)
+    {
+        if (contents.Count <= maxEntries)
+            return contents;
+
+        var trimmed = new JsonArray();
+        var startIndex = contents.Count - maxEntries;
+        for (var i = startIndex; i < contents.Count; i++)
+            trimmed.Add(contents[i]?.DeepClone());
+
+        return trimmed;
+    }
+
     private async Task<JsonNode> CallGeminiAsync(
         JsonArray contents,
         JsonArray functionDeclarations,
@@ -316,6 +373,12 @@ public class ChatService : IChatService
     private static JsonObject BuildUserTextContent(string text) => new()
     {
         ["role"] = "user",
+        ["parts"] = new JsonArray { new JsonObject { ["text"] = text } }
+    };
+
+    private static JsonObject BuildModelTextContent(string text) => new()
+    {
+        ["role"] = "model",
         ["parts"] = new JsonArray { new JsonObject { ["text"] = text } }
     };
 

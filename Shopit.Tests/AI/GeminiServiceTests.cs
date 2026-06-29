@@ -147,8 +147,10 @@ public class GeminiServiceTests
     }
 
     [Fact]
-    public async Task GenerateProductContentAsync_SeoTitleTooLong_Throws()
+    public async Task GenerateProductContentAsync_SeoTitleTooLong_TruncatesInsteadOfThrowing()
     {
+        // Gemini doesn't reliably honor the schema's maxLength constraint, so an
+        // over-length title is trimmed to the limit rather than rejected outright.
         var longTitle = """
             {
               "description": "Valid description.",
@@ -159,10 +161,9 @@ public class GeminiServiceTests
             """;
         var service = CreateService(_ => JsonResponse(HttpStatusCode.OK, GeminiEnvelope(longTitle)));
 
-        var act = () => service.GenerateProductContentAsync("Name", "Category", "Specs");
+        var result = await service.GenerateProductContentAsync("Name", "Category", "Specs");
 
-        await act.Should().ThrowAsync<ExternalServiceException>()
-            .WithMessage("*SEO title*");
+        result.SeoTitle.Length.Should().BeLessThanOrEqualTo(60);
     }
 
     [Fact]

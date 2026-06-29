@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -12,15 +12,52 @@ namespace Shopit.Infrastructure.Services;
 /// <summary>
 /// Bridges a chat conversation between Gemini's function-calling API and the
 /// Shopit MCP server. Each call connects to the MCP server fresh, lists its
-/// tools, and runs a function-calling loop with Gemini (capped at
-/// <see cref="MaxIterations"/> turns) until Gemini returns a plain text reply.
-/// Conversation state is kept in memory for the duration of this single request only.
+/// tools, filters them by the caller's role, and runs a function-calling loop
+/// with Gemini (capped at <see cref="MaxIterations"/> turns) until Gemini
+/// returns a plain text reply. Conversation state is kept in memory for the
+/// duration of this single request only.
+///
+/// Security model (see SCRUM-106):
+///   1. Tool filtering — <see cref="GetToolsForRole"/> strips admin-only tools
+///      out of functionDeclarations entirely for non-admin roles, so the model
+///      cannot call what it cannot see.
+///   2. Identity injection — for tools that operate on the caller's own data
+///      (<see cref="IdentityInjectedTools"/>), the userId argument is always
+///      overwritten with the value from the caller's JWT claims before the
+///      tool executes, regardless of what the model supplied.
 /// </summary>
 public class ChatService : IChatService
 {
     public const string HttpClientName = "GeminiClient";
 
     private const int MaxIterations = 5;
+
+    /// <summary>
+    /// Tools that operate on the caller's own data. Any "userId" argument the
+    /// model supplies for these tools is discarded and replaced with the
+    /// caller's JWT-derived userId before the tool is invoked.
+    /// </summary>
+    private static readonly HashSet<string> IdentityInjectedTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "get_customer_orders",
+        // add_to_cart / view_cart are not yet implemented as MCP tools — add
+        // here once they exist, per SCRUM-106's customer tool list.
+    };
+
+    /// <summary>
+    /// Tools a non-admin caller is allowed to see and invoke. Anything not
+    /// listed here (e.g. get_dashboard_summary, get_low_stock_products,
+    /// get_order) is stripped from functionDeclarations entirely for
+    /// non-admin roles.
+    /// </summary>
+    private static readonly HashSet<string> CustomerAllowedTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "search_products",
+        "get_customer_orders",
+        // add_to_cart / view_cart per SCRUM-106 — not yet implemented as MCP tools.
+    };
+
+    private const string AdminRole = "Admin";
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<ChatService> _logger;
@@ -47,6 +84,8 @@ public class ChatService : IChatService
     public async Task<ChatResponse> SendMessageAsync(
         string message,
         string? conversationId,
+        int userId,
+        string role,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(_apiKey))
@@ -68,8 +107,9 @@ public class ChatService : IChatService
 
         await using var mcpClient = await McpClient.CreateAsync(transport, cancellationToken: cancellationToken);
 
-        var tools = await mcpClient.ListToolsAsync(cancellationToken: cancellationToken);
-        var functionDeclarations = BuildFunctionDeclarations(tools);
+        var allTools = await mcpClient.ListToolsAsync(cancellationToken: cancellationToken);
+        var allowedTools = GetToolsForRole(role, allTools);
+        var functionDeclarations = BuildFunctionDeclarations(allowedTools);
 
         var contents = new JsonArray
         {
@@ -93,7 +133,29 @@ public class ChatService : IChatService
 
             var functionName = functionCall["name"]!.GetValue<string>();
             var argsNode = functionCall["args"] as JsonObject;
-            var arguments = ConvertArgsToDictionary(argsNode);
+
+            // Defence in depth: even though tool filtering already hides
+            // disallowed tools from the model, never execute a tool that
+            // didn't make it through the role filter, in case the model
+            // somehow still attempts to call one.
+            if (!allowedTools.Any(t => string.Equals(t.Name, functionName, StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger.LogWarning(
+                    "Blocked call to tool {ToolName} not permitted for role {Role}.",
+                    functionName, role);
+
+                contents.Add(BuildModelFunctionCallContent(functionName, argsNode));
+                contents.Add(BuildFunctionResponseContent(functionName, "Tool call denied: not permitted for this user's role."));
+                continue;
+            }
+
+            // Identity injection: the model never decides whose data it reads.
+            // This is delegated to a pure, separately-testable method so the
+            // override behavior can be unit tested without needing a real
+            // MCP connection or HTTP mocking.
+            var argsObject = ApplyIdentityInjection(functionName, argsNode, userId);
+
+            var arguments = ConvertArgsToDictionary(argsObject);
 
             _logger.LogInformation("Gemini requested tool call: {ToolName}", functionName);
 
@@ -113,13 +175,68 @@ public class ChatService : IChatService
             }
 
             // Append the model's function call turn, then our function response turn.
-            contents.Add(BuildModelFunctionCallContent(functionName, argsNode));
+            contents.Add(BuildModelFunctionCallContent(functionName, argsObject));
             contents.Add(BuildFunctionResponseContent(functionName, toolResultText));
         }
 
         throw new ExternalServiceException("The assistant did not produce a final reply within the allowed number of tool-call iterations.");
     }
 
+    /// <summary>
+    /// Filters the full MCP tool list down to what a caller with the given
+    /// role is permitted to see and invoke. Admins see every tool; any other
+    /// role sees only <see cref="CustomerAllowedTools"/>. Tools not returned
+    /// here are completely absent from the functionDeclarations sent to
+    /// Gemini, so the model cannot call what it cannot see.
+    /// </summary>
+    public static IReadOnlyList<McpClientTool> GetToolsForRole(string role, IEnumerable<McpClientTool> allTools)
+    {
+        var allToolsList = allTools.ToList();
+        var allowedNames = GetAllowedToolNames(role, allToolsList.Select(t => t.Name));
+        return allToolsList.Where(t => allowedNames.Contains(t.Name)).ToList();
+    }
+
+    /// <summary>
+    /// Pure, name-based version of the role filter used by <see cref="GetToolsForRole"/>.
+    /// Kept separate (and public) so the filtering rule itself can be unit tested
+    /// without needing to construct real McpClientTool instances.
+    /// </summary>
+    public static HashSet<string> GetAllowedToolNames(string role, IEnumerable<string> allToolNames)
+    {
+        var names = allToolNames.ToList();
+
+        if (string.Equals(role, AdminRole, StringComparison.OrdinalIgnoreCase))
+            return new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
+
+        return new HashSet<string>(
+            names.Where(CustomerAllowedTools.Contains),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Returns the argument set that will actually be sent to an MCP tool call,
+    /// after overwriting any identity-related argument the model supplied.
+    ///
+    /// For tools in <see cref="IdentityInjectedTools"/> (tools that operate on
+    /// the caller's own data, e.g. get_customer_orders), the "userId" argument
+    /// is always replaced with <paramref name="callerUserId"/> — taken from the
+    /// caller's JWT claims — regardless of what value the model supplied. This
+    /// is the backstop defence from SCRUM-106: even if tool filtering somehow
+    /// let an identity-sensitive tool through, the model can never read another
+    /// user's data because it cannot control whose userId is actually used.
+    ///
+    /// Pure and side-effect free so this exact security behavior can be unit
+    /// tested without a real MCP connection.
+    /// </summary>
+    public static JsonObject ApplyIdentityInjection(string toolName, JsonObject? modelSuppliedArgs, int callerUserId)
+    {
+        var args = modelSuppliedArgs?.DeepClone() as JsonObject ?? new JsonObject();
+
+        if (IdentityInjectedTools.Contains(toolName))
+            args["userId"] = callerUserId;
+
+        return args;
+    }
     private async Task<JsonNode> CallGeminiAsync(
         JsonArray contents,
         JsonArray functionDeclarations,
@@ -239,7 +356,7 @@ public class ChatService : IChatService
         return responseJson["candidates"]?[0]?["content"]?["parts"]?[0];
     }
 
-    private static JsonArray BuildFunctionDeclarations(IList<McpClientTool> tools)
+    private static JsonArray BuildFunctionDeclarations(IEnumerable<McpClientTool> tools)
     {
         var declarations = new JsonArray();
         foreach (var tool in tools)

@@ -98,7 +98,37 @@ public class ReviewService : IReviewService
 
         return await GetReviewWithUser(review.Id);
     }
+public async Task<ProductReviewsResponse> GetAllReviewsAsync(ReviewQueryParameters parameters)
+{
+    var query = _context.Reviews
+        .Include(r => r.User)
+        .OrderByDescending(r => r.CreatedAt)
+        .AsQueryable();
 
+    var totalCount = await query.CountAsync();
+
+    var reviews = await query
+        .Skip((parameters.PageNumber - 1) * parameters.PageSize)
+        .Take(parameters.PageSize)
+        .Select(r => new ReviewResponse
+        {
+            Id = r.Id,
+            ProductId = r.ProductId,
+            UserId = r.UserId,
+            ReviewerFirstName = r.User.FirstName,
+            ReviewerLastName = r.User.LastName,
+            Rating = r.Rating,
+            Comment = r.Comment,
+            CreatedAt = r.CreatedAt
+        })
+        .ToListAsync();
+
+    return new ProductReviewsResponse
+    {
+        TotalCount = totalCount,
+        Reviews = reviews
+    };
+}
     public async Task<ReviewResponse> UpdateReviewAsync(int reviewId, UpdateReviewRequest request, int currentUserId)
     {
         var review = await _context.Reviews

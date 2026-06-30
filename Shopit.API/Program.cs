@@ -218,6 +218,7 @@ builder.Services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
 builder.Services.AddScoped<IExternalAuthService, ExternalAuthService>();
 builder.Services.AddScoped<IGeminiService, GeminiService>();
 builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<IConversationStore, RedisConversationStore>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();

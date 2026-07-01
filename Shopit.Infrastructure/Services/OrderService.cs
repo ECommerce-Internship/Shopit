@@ -100,7 +100,7 @@ public class OrderService : IOrderService
                 {
                     OrderId = order.Id,
                     StoreId = storeGroup.Key,
-                    Status = OrderStatus.Processing,
+                    Status = OrderStatus.Pending,
                     SubTotal = storeSubtotal,
                     CommissionAmount = commission,
                     SellerNetAmount = storeSubtotal - commission

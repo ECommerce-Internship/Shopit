@@ -24,6 +24,14 @@ public class ReviewController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> GetAll([FromQuery] ReviewQueryParameters parameters)
+    {
+        var result = await _reviewService.GetAllReviewsAsync(parameters);
+        return Ok(result);
+    }
+
     [HttpPost]
     [Authorize]
     public async Task<IActionResult> Submit([FromBody] SubmitReviewRequest request)

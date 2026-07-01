@@ -146,6 +146,7 @@ public class CartService : ICartService
         var cart = await _context.Carts
             .Include(c => c.CartItems)
                 .ThenInclude(ci => ci.Product)
+                .ThenInclude(p => p.Store)
             .Include(c => c.Coupon)
             .FirstOrDefaultAsync(c => c.UserId == userId && c.Status == CartStatus.Active);
 
@@ -164,6 +165,7 @@ public class CartService : ICartService
         return await _context.Carts
             .Include(c => c.CartItems)
                 .ThenInclude(ci => ci.Product)
+                .ThenInclude(p => p.Store)
             .Include(c => c.Coupon)
             .FirstAsync(c => c.Id == cartId);
     }
@@ -178,7 +180,10 @@ public class CartService : ICartService
             SKU = ci.Product.SKU,
             UnitPrice = ci.Product.Price,
             Quantity = ci.Quantity,
-            Subtotal = ci.Product.Price * ci.Quantity
+            Subtotal = ci.Product.Price * ci.Quantity,
+            StoreId = ci.Product.Store.Id,
+            StoreName = ci.Product.Store.Name,
+            StoreSlug = ci.Product.Store.Slug
         }).ToList();
 
         var subtotal = items.Sum(i => i.Subtotal);

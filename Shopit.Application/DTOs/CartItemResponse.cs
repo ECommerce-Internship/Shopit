@@ -9,4 +9,7 @@ public class CartItemResponse
     public decimal UnitPrice { get; set; }
     public int Quantity { get; set; }
     public decimal Subtotal { get; set; }
+     public int StoreId { get; set; }
+    public string StoreName { get; set; } = string.Empty;
+    public string StoreSlug { get; set; } = string.Empty;
 }

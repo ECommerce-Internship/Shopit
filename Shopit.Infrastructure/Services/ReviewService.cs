@@ -184,28 +184,7 @@ public async Task<ProductReviewsResponse> GetAllReviewsAsync(ReviewQueryParamete
 
         Log.Information("Review {ReviewId} admin-deleted", reviewId);
     }
-    public async Task<ProductReviewsResponse> GetAllReviewsAsync(ReviewQueryParameters parameters)
-    {
-        var pageNumber = parameters.PageNumber <= 0 ? 1 : parameters.PageNumber;
-        var pageSize = parameters.PageSize <= 0 ? 10 : parameters.PageSize;
-        if (pageSize > 100) pageSize = 100;
-
-        var totalCount = await _context.Reviews.CountAsync();
-
-        var reviews = await _context.Reviews
-            .Include(r => r.User)
-            .OrderByDescending(r => r.CreatedAt)
-            .Skip((pageNumber - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        return new ProductReviewsResponse
-        {
-            TotalCount = totalCount,
-            Reviews = reviews.Select(MapToResponse).ToList()
-        };
-    }
-
+    
     private async Task<ReviewResponse> GetReviewWithUser(int reviewId)
     {
         var review = await _context.Reviews

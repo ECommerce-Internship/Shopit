@@ -22,6 +22,11 @@ public class ExceptionHandlingMiddleware
         {
             await _next(context);
         }
+        catch (ForbiddenException ex)
+        {
+            _logger.LogWarning(ex, "Forbidden access");
+            await HandleExceptionAsync(context, ex);
+        }
         catch (NotFoundException ex)
         {
             _logger.LogWarning(ex, "Resource not found");
@@ -30,11 +35,6 @@ public class ExceptionHandlingMiddleware
         catch (ConflictException ex)
         {
             _logger.LogWarning(ex, "Conflict occurred");
-            await HandleExceptionAsync(context, ex);
-        }
-        catch (ForbiddenException ex)
-        {
-            _logger.LogWarning(ex, "Forbidden access");
             await HandleExceptionAsync(context, ex);
         }
         catch (ValidationException ex)

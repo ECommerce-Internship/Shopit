@@ -28,11 +28,7 @@ public class ReviewController : ControllerBase
     [Authorize]
     [HttpGet]
     [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> GetAll([FromQuery] ReviewQueryParameters parameters)
-    {
-        var result = await _reviewService.GetAllReviewsAsync(parameters);
-        return Ok(result);
-    }
+    
     public async Task<IActionResult> Submit([FromBody] SubmitReviewRequest request)
     {
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);

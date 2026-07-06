@@ -103,7 +103,7 @@ public class ChatServiceTests
             ["pageSize"] = 10
         };
 
-        var result = ChatService.ApplyIdentityInjection("get_customer_orders", modelArgs, callerUserId: 5);
+        var result = ChatService.ApplyIdentityInjection("get_customer_orders", modelArgs, callerUserId: 5, callerRole: "Customer");
 
         result["userId"]!.GetValue<int>().Should().Be(5);
     }
@@ -118,7 +118,7 @@ public class ChatServiceTests
             ["pageSize"] = 25
         };
 
-        var result = ChatService.ApplyIdentityInjection("get_customer_orders", modelArgs, callerUserId: 5);
+        var result = ChatService.ApplyIdentityInjection("get_customer_orders", modelArgs, callerUserId: 5, callerRole: "Customer");
 
         result["page"]!.GetValue<int>().Should().Be(2);
         result["pageSize"]!.GetValue<int>().Should().Be(25);
@@ -129,7 +129,7 @@ public class ChatServiceTests
     {
         // Defends against a model that omits userId entirely, hoping the tool
         // falls back to some default — the caller's own id is injected regardless.
-        var result = ChatService.ApplyIdentityInjection("get_customer_orders", modelSuppliedArgs: null, callerUserId: 7);
+        var result = ChatService.ApplyIdentityInjection("get_customer_orders", modelSuppliedArgs: null, callerUserId: 7, callerRole: "Customer");
 
         result["userId"]!.GetValue<int>().Should().Be(7);
     }
@@ -145,7 +145,7 @@ public class ChatServiceTests
             ["pageNumber"] = 1
         };
 
-        var result = ChatService.ApplyIdentityInjection("search_products", modelArgs, callerUserId: 5);
+        var result = ChatService.ApplyIdentityInjection("search_products", modelArgs, callerUserId: 5, callerRole: "Customer");
 
         result["search"]!.GetValue<string>().Should().Be("phone");
         result.ContainsKey("userId").Should().BeFalse();
@@ -158,7 +158,7 @@ public class ChatServiceTests
     {
         var modelArgs = new JsonObject { ["userId"] = 999 };
 
-        var result = ChatService.ApplyIdentityInjection(toolName, modelArgs, callerUserId: 5);
+        var result = ChatService.ApplyIdentityInjection(toolName, modelArgs, callerUserId: 5, callerRole: "Customer");
 
         result["userId"]!.GetValue<int>().Should().Be(5);
     }

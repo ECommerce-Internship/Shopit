@@ -1,0 +1,6 @@
+@Shopit.API_HostAddress = http://localhost:5129
+
+GET {{Shopit.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

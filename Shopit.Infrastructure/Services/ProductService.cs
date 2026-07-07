@@ -209,6 +209,92 @@ public class ProductService : IProductService
         return result;
     }
 
+    // Not cached: this is a per-caller view (scoped to the owner's own stores),
+    // so a shared cache key would either leak between sellers or need a per-user
+    // key scheme. Management screens are low-traffic enough that this is fine.
+    public async Task<PaginatedResult<ProductResponse>> GetMineAsync(
+        ProductQueryParameters queryParameters,
+        int userId,
+        bool isAdmin)
+    {
+        queryParameters ??= new ProductQueryParameters();
+
+        var pageNumber = queryParameters.PageNumber <= 0 ? 1 : queryParameters.PageNumber;
+        var pageSize = queryParameters.PageSize <= 0 ? 10 : queryParameters.PageSize;
+
+        if (pageSize > 100)
+            pageSize = 100;
+
+        if (queryParameters.MinPrice.HasValue &&
+            queryParameters.MaxPrice.HasValue &&
+            queryParameters.MinPrice.Value > queryParameters.MaxPrice.Value)
+        {
+            throw new DomainValidationException("MinPrice cannot be greater than MaxPrice.");
+        }
+
+        // Deliberately no Store.Status filter here: a seller must be able to see
+        // and manage their own products regardless of approval state.
+        var productsQuery = _context.Products
+            .AsNoTracking()
+            .Where(p => !p.IsDeleted);
+
+        productsQuery = isAdmin
+            ? productsQuery
+            : productsQuery.Where(p => p.Store.OwnerUserId == userId);
+
+        if (queryParameters.StoreId.HasValue)
+            productsQuery = productsQuery.Where(p => p.StoreId == queryParameters.StoreId.Value);
+
+        if (!string.IsNullOrWhiteSpace(queryParameters.Search))
+        {
+            var searchTerm = queryParameters.Search.Trim();
+            productsQuery = productsQuery.Where(p => p.Name.Contains(searchTerm));
+        }
+
+        if (queryParameters.CategoryId.HasValue)
+            productsQuery = productsQuery.Where(p => p.CategoryId == queryParameters.CategoryId.Value);
+
+        if (queryParameters.MinPrice.HasValue)
+            productsQuery = productsQuery.Where(p => p.Price >= queryParameters.MinPrice.Value);
+
+        if (queryParameters.MaxPrice.HasValue)
+            productsQuery = productsQuery.Where(p => p.Price <= queryParameters.MaxPrice.Value);
+
+        var sortBy = (queryParameters.SortBy ?? "createdAt").Trim().ToLowerInvariant();
+        var sortDirection = (queryParameters.SortDirection ?? "desc").Trim().ToLowerInvariant();
+
+        if (sortDirection != "asc" && sortDirection != "desc")
+            throw new DomainValidationException("SortDirection must be either 'asc' or 'desc'.");
+
+        var descending = sortDirection == "desc";
+
+        productsQuery = sortBy switch
+        {
+            "name" => descending
+                ? productsQuery.OrderByDescending(p => p.Name)
+                : productsQuery.OrderBy(p => p.Name),
+
+            "price" => descending
+                ? productsQuery.OrderByDescending(p => p.Price)
+                : productsQuery.OrderBy(p => p.Price),
+
+            "createdat" => descending
+                ? productsQuery.OrderByDescending(p => p.CreatedAt)
+                : productsQuery.OrderBy(p => p.CreatedAt),
+
+            _ => throw new DomainValidationException("SortBy must be one of: name, price, createdAt.")
+        };
+
+        var totalCount = await productsQuery.CountAsync();
+
+        var items = await ProjectToResponse(productsQuery)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return new PaginatedResult<ProductResponse>(items, totalCount, pageNumber, pageSize);
+    }
+
     public async Task<ProductResponse> GetByIdAsync(int id)
     {
         var cacheKey = $"product:{id}";

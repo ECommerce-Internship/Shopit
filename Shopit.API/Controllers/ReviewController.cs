@@ -34,8 +34,6 @@ public class ReviewController : ControllerBase
 
     [HttpPost]
     [Authorize]
-    [HttpGet]
-    [Authorize(Roles = "Admin")]
     
     public async Task<IActionResult> Submit([FromBody] SubmitReviewRequest request)
     {

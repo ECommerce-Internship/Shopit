@@ -37,6 +37,7 @@ builder.Services.AddScoped<ICacheService, CacheService>();
 builder.Services.AddScoped<ILowStockAlertService, LowStockAlertService>();
 builder.Services.AddScoped<IEmailService, EmailServiceStub>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddHttpClient();

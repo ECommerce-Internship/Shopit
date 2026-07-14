@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Shopit.Application.DTOs.Auth;
 using Shopit.Application.Interfaces;
 using System.Security.Claims;
@@ -17,28 +18,37 @@ public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
     private readonly IExternalAuthService _externalAuthService;
+    private readonly IPasswordResetService _passwordResetService;
     private readonly IValidator<RegisterRequest> _registerValidator;
     private readonly IValidator<RegisterSellerRequest> _registerSellerValidator;
     private readonly IValidator<LoginRequest> _loginValidator;
     private readonly IValidator<UpdateProfileRequest> _updateProfileValidator;
     private readonly IValidator<ChangePasswordRequest> _changePasswordValidator;
+    private readonly IValidator<ForgotPasswordRequest> _forgotPasswordValidator;
+    private readonly IValidator<ResetPasswordRequest> _resetPasswordValidator;
 
     public AuthController(
         IAuthService authService,
         IExternalAuthService externalAuthService,
+        IPasswordResetService passwordResetService,
         IValidator<RegisterRequest> registerValidator,
         IValidator<RegisterSellerRequest> registerSellerValidator,
         IValidator<LoginRequest> loginValidator,
         IValidator<UpdateProfileRequest> updateProfileValidator,
-        IValidator<ChangePasswordRequest> changePasswordValidator)
+        IValidator<ChangePasswordRequest> changePasswordValidator,
+        IValidator<ForgotPasswordRequest> forgotPasswordValidator,
+        IValidator<ResetPasswordRequest> resetPasswordValidator)
     {
         _authService = authService;
         _externalAuthService = externalAuthService;
+        _passwordResetService = passwordResetService;
         _registerValidator = registerValidator;
         _registerSellerValidator = registerSellerValidator;
         _loginValidator = loginValidator;
         _updateProfileValidator = updateProfileValidator;
         _changePasswordValidator = changePasswordValidator;
+        _forgotPasswordValidator = forgotPasswordValidator;
+        _resetPasswordValidator = resetPasswordValidator;
     }
 
     [HttpPost("register")]
@@ -143,6 +153,38 @@ public class AuthController : ControllerBase
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         await _authService.ChangePasswordAsync(userId, request);
         return NoContent();
+    }
+
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    [EnableRateLimiting("PasswordReset")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+    {
+        var validation = await _forgotPasswordValidator.ValidateAsync(request);
+        if (!validation.IsValid)
+            return BadRequest(validation.Errors.Select(e => e.ErrorMessage));
+
+        await _passwordResetService.RequestPasswordResetAsync(request);
+
+        // Always the same response, whether or not the email belongs to an account (no enumeration).
+        return Ok(new { message = "If an account exists for that email, a reset code has been sent." });
+    }
+
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+    {
+        var validation = await _resetPasswordValidator.ValidateAsync(request);
+        if (!validation.IsValid)
+            return BadRequest(validation.Errors.Select(e => e.ErrorMessage));
+
+        await _passwordResetService.ResetPasswordAsync(request);
+        return Ok(new { message = "Your password has been reset. You can now log in with your new password." });
     }
 
     [HttpGet("admin-test")]

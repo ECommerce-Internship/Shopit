@@ -19,7 +19,7 @@ public class LowStockWorker : BackgroundService
     {
         _queueClient = queueClient;
         _serviceProvider = serviceProvider;
-        _adminEmail = configuration["SendGrid:AdminEmail"]!;
+        _adminEmail = configuration["Brevo:AdminEmail"]!;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

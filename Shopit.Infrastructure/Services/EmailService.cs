@@ -16,4 +16,10 @@ public class EmailService : IEmailService
         Log.Warning("Low stock alert email sent to {Email} for {ProductName}", adminEmail, productName);
         return Task.CompletedTask;
     }
+
+    public Task SendPasswordResetCodeAsync(string email, string code)
+    {
+        Log.Information("Password reset code email sent to {Email}", email);
+        return Task.CompletedTask;
+    }
 }

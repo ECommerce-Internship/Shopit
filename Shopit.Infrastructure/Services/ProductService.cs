@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using FluentValidation;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -120,7 +120,7 @@ public class ProductService : IProductService
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Cache read failed for key {CacheKey} — falling back to DB", cacheKey);
+            Log.Warning(ex, "Cache read failed for key {CacheKey} â€” falling back to DB", cacheKey);
         }
 
         if (cached is not null)
@@ -203,7 +203,7 @@ public class ProductService : IProductService
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Cache write failed for key {CacheKey} — continuing without cache", cacheKey);
+            Log.Warning(ex, "Cache write failed for key {CacheKey} â€” continuing without cache", cacheKey);
         }
 
         return result;
@@ -306,7 +306,7 @@ public class ProductService : IProductService
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Cache read failed for key {CacheKey} — falling back to DB", cacheKey);
+            Log.Warning(ex, "Cache read failed for key {CacheKey} â€” falling back to DB", cacheKey);
         }
 
         if (cached is not null)
@@ -327,7 +327,7 @@ public class ProductService : IProductService
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Cache write failed for key {CacheKey} — continuing without cache", cacheKey);
+            Log.Warning(ex, "Cache write failed for key {CacheKey} â€” continuing without cache", cacheKey);
         }
 
         return product;
@@ -415,6 +415,9 @@ public class ProductService : IProductService
         product.Price = request.Price;
         product.SKU = sku;
         product.ImageUrl = request.ImageUrl;
+        product.SeoTitle = request.SeoTitle;
+        product.MetaDescription = request.MetaDescription;
+        product.Features = request.Features;
         product.CategoryId = request.CategoryId;
 
         if (product.Inventory is null)
@@ -641,6 +644,9 @@ public class ProductService : IProductService
             Price = p.Price,
             Sku = p.SKU,
             ImageUrl = p.ImageUrl,
+            SeoTitle = p.SeoTitle,
+            MetaDescription = p.MetaDescription,
+            Features = p.Features,
             CategoryId = p.CategoryId,
             CategoryName = p.Category.Name,
             StoreId = p.StoreId,

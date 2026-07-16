@@ -1,4 +1,4 @@
-using Asp.Versioning;
+﻿using Asp.Versioning;
 using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
 using FluentValidation;
@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -81,7 +82,7 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "Bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Paste ONLY your JWT access token (the eyJ... value). Do NOT type 'Bearer' — Swagger adds it automatically."
+        Description = "Paste ONLY your JWT access token (the eyJ... value). Do NOT type 'Bearer' â€” Swagger adds it automatically."
     });
 
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -239,8 +240,16 @@ builder.Services.AddValidatorsFromAssembly(typeof(CreateCategoryRequestValidator
 builder.Services.AddValidatorsFromAssembly(typeof(IProductService).Assembly);
 
 builder.Services.AddHostedService<LowStockWorker>();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 var app = builder.Build();
 
+app.UseForwardedHeaders();
 if (app.Environment.IsDevelopment())
 {
     using (var scope = app.Services.CreateScope())

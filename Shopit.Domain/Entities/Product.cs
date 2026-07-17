@@ -1,5 +1,4 @@
 namespace Shopit.Domain.Entities;
-
 public class Product
 {
     public int Id { get; set; }
@@ -21,4 +20,6 @@ public class Product
     public ICollection<CartItem> CartItems { get; set; } = new List<CartItem>();
     public ICollection<StoreOrderItem> StoreOrderItems { get; set; } = new List<StoreOrderItem>();
     public ICollection<Review> Reviews { get; set; } = new List<Review>();
+
+    public float[]? Embedding { get; set; }
 }

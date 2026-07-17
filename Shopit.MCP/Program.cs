@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using FluentValidation;
 using Shopit.Application.Products.DTOs;
 using Shopit.Application.AI;
+using Pgvector.EntityFrameworkCore;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -20,7 +21,8 @@ var builder = Host.CreateApplicationBuilder(args);
 var config = builder.Configuration;
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(config["ConnectionStrings:DefaultConnection"]));
+    options.UseNpgsql(config["ConnectionStrings:DefaultConnection"],
+        o => o.UseVector()));
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     ConnectionMultiplexer.Connect(config["ConnectionStrings:Redis"]!));

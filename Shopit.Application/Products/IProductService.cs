@@ -23,7 +23,9 @@ public interface IProductService
     Task<string> UploadImageAsync(int productId, IFormFile file, IBlobStorageService blobStorageService, string containerName, int userId, bool isAdmin);
 
     Task DeleteImageAsync(int productId, IBlobStorageService blobStorageService, string containerName, int userId, bool isAdmin);
+    Task<IEnumerable<ProductResponse>> SemanticSearchAsync(string query, int take = 10);
 
+    Task<int> BackfillEmbeddingsAsync(CancellationToken ct = default);
     /// <summary>
     /// Generates AI marketing-content suggestions for an existing product.
     /// This is a non-saving operation — it does not persist anything; the caller

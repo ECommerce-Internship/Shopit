@@ -557,7 +557,8 @@ public class ProductServiceTests
             new CreateProductRequestValidator(),
             new UpdateProductRequestValidator(),
             cacheMock.Object,
-            geminiService ?? Mock.Of<IGeminiService>());
+            geminiService ?? Mock.Of<IGeminiService>(),
+            Mock.Of<IEmbeddingService>());
     }
 
     private static AppDbContext CreateContext()

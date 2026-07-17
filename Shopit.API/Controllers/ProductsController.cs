@@ -56,7 +56,23 @@ public class ProductsController : ControllerBase
         var products = await _productService.GetAllAsync(queryParameters);
         return Ok(products);
     }
+    [HttpGet("search/semantic")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SemanticSearch([FromQuery] string q, [FromQuery] int take = 10)
+    {
+        var results = await _productService.SemanticSearchAsync(q, take);
+        return Ok(results);
+    }
 
+    [HttpPost("backfill-embeddings")]
+    [Authorize(Roles = "Admin")]
+    /// Backfills embeddings for all products that do not have an embedding yet. Admin only.
+    /// This is a long-running operation and may take several minutes depending on the number of products
+    public async Task<IActionResult> BackfillEmbeddings(CancellationToken ct)
+    {
+        var count = await _productService.BackfillEmbeddingsAsync(ct);
+        return Ok(new { embedded = count });
+    }
     /// <summary>
     /// Gets a product by ID.
     /// </summary>

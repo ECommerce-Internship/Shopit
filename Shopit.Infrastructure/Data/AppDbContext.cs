@@ -1,3 +1,5 @@
+using Pgvector;
+using Pgvector.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Shopit.Domain.Entities;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -27,6 +29,20 @@ public class AppDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.HasPostgresExtension("vector");
+        modelBuilder.Entity<Product>()
+            .Property(p => p.Embedding)
+            .HasColumnType("vector(3072)")
+            .HasConversion(
+                v => new Vector(v!),
+                v => v.ToArray()
+            )
+        .Metadata.SetValueComparer(new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<float[]?>(
+            (a, b) => a == null ? b == null : b != null && a.SequenceEqual(b),
+            v => v == null ? 0 : v.Aggregate(0, (a, b) => HashCode.Combine(a, b.GetHashCode())),
+            v => v == null ? null : v.ToArray()
+            ));
 
         // User -> Orders (one-to-many)
         modelBuilder.Entity<Order>()

@@ -1,4 +1,4 @@
-using Asp.Versioning;
+﻿using Asp.Versioning;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Google;
@@ -22,6 +22,7 @@ public class AuthController : ControllerBase
     private readonly IValidator<LoginRequest> _loginValidator;
     private readonly IValidator<UpdateProfileRequest> _updateProfileValidator;
     private readonly IValidator<ChangePasswordRequest> _changePasswordValidator;
+    private readonly IConfiguration _configuration;
 
     public AuthController(
         IAuthService authService,
@@ -30,7 +31,8 @@ public class AuthController : ControllerBase
         IValidator<RegisterSellerRequest> registerSellerValidator,
         IValidator<LoginRequest> loginValidator,
         IValidator<UpdateProfileRequest> updateProfileValidator,
-        IValidator<ChangePasswordRequest> changePasswordValidator)
+        IValidator<ChangePasswordRequest> changePasswordValidator,
+        IConfiguration configuration)
     {
         _authService = authService;
         _externalAuthService = externalAuthService;
@@ -39,6 +41,7 @@ public class AuthController : ControllerBase
         _loginValidator = loginValidator;
         _updateProfileValidator = updateProfileValidator;
         _changePasswordValidator = changePasswordValidator;
+        _configuration = configuration;
     }
 
     [HttpPost("register")]
@@ -175,7 +178,7 @@ public class AuthController : ControllerBase
     [ProducesResponseType(StatusCodes.Status302Found)]
     public async Task<IActionResult> GoogleCallback()
     {
-        var frontendBaseUrl = "http://localhost:5173"; // TODO: move to configuration once a staging/prod frontend URL exists
+        var frontendBaseUrl = _configuration["Frontend:BaseUrl"] ?? "http://localhost:5173";
 
         var result = await HttpContext.AuthenticateAsync(GoogleDefaults.AuthenticationScheme);
         if (!result.Succeeded)

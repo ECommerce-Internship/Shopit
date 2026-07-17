@@ -1,5 +1,4 @@
-namespace Shopit.Application.DTOs.Reviews;
-
+﻿namespace Shopit.Application.DTOs.Reviews;
 public class ReviewResponse
 {
     public int Id { get; set; }
@@ -10,4 +9,7 @@ public class ReviewResponse
     public int Rating { get; set; }
     public string? Comment { get; set; }
     public DateTime CreatedAt { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? ModerationReason { get; set; }
+    public DateTime? ModeratedAt { get; set; }
 }

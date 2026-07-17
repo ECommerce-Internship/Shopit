@@ -18,6 +18,7 @@ using Shopit.Application.AI;
 using Shopit.Application.Chat;
 using Shopit.Application.Interfaces;
 using Shopit.Application.Products;
+using Shopit.Application.Rag;
 using Shopit.Application.Validators;
 using Shopit.Infrastructure.Configuration;
 using Shopit.Infrastructure.Data;
@@ -231,6 +232,13 @@ builder.Services.AddScoped<IExternalAuthService, ExternalAuthService>();
 builder.Services.AddScoped<IGeminiService, GeminiService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IConversationStore, RedisConversationStore>();
+
+// SCRUM-166: feature-doc RAG. This host owns ingestion (admin endpoint + Dev
+// startup); the MCP host owns answering. Both share the same database.
+builder.Services.AddSingleton<MarkdownFeatureChunker>();
+builder.Services.AddScoped<IEmbeddingService, GeminiEmbeddingService>();
+builder.Services.AddScoped<IVectorStore, InMemoryVectorStore>();
+builder.Services.AddScoped<IFeatureDocIngestionService, FeatureDocIngestionService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
@@ -260,6 +268,22 @@ if (app.Environment.IsDevelopment())
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         context.Database.Migrate();
         DbInitializer.Seed(context);
+
+        // SCRUM-166: ingest the feature docs on startup so the chat assistant can
+        // answer feature questions in a fresh Dev environment. Gated by config and
+        // best-effort — a Gemini/config problem must not stop the app from booting.
+        if (app.Configuration.GetValue<bool?>("FeatureQa:ReindexOnStartup") ?? true)
+        {
+            try
+            {
+                var ingestion = scope.ServiceProvider.GetRequiredService<IFeatureDocIngestionService>();
+                ingestion.ReindexAsync().GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                app.Logger.LogError(ex, "Feature-doc ingestion on startup failed; continuing without it.");
+            }
+        }
     }
 
     app.UseSwagger();

@@ -1,44 +1,21 @@
 # Browsing and Searching Products
 
 ## What it does
-Lets shoppers browse the Shopit catalog, search for products, filter and sort results,
-and open a single product to see its full details (price, description, image, stock,
-average rating, and review count).
+Browse everything on Shopit, search for something specific, narrow things down and sort
+them the way you like, then open any product to see the full details — price, description,
+photo, whether it's in stock, its average rating, and how many reviews it has.
 
 ## Who can use it
-Anyone. These endpoints are public — no login is required to browse or view products.
-Only products that belong to an **Approved** store appear in the public catalog.
+Anyone. You can browse and view products without signing in.
 
 ## How it works
-- The product list is **paginated**. You ask for a page and a page size and get back the
-  items for that page plus paging information.
-- You can narrow the list with query parameters and change the ordering.
-- Opening a product by its ID returns the full product, including its store, category,
-  current stock quantity, average rating, and number of reviews.
+Products are shown a page at a time, so you can flip through them comfortably rather than
+loading everything at once. You can search by name, focus on a single category or shop,
+set a price range, and change the order things appear in — for example, newest first or by
+price. Open any product to see everything about it, including the shop it comes from, its
+category, how many are left in stock, its average rating, and its number of reviews.
 
-## Endpoints
-| Method | Route | Description |
-|---|---|---|
-| GET | `/api/v1/products` | List products (paginated, filterable, sortable). |
-| GET | `/api/v1/products/{id}` | Get one product by its ID. Returns 404 if it doesn't exist. |
-
-## Query parameters (for `GET /products`)
-| Parameter | Meaning |
-|---|---|
-| `search` | Free-text search on product name. |
-| `categoryId` | Only products in this category. |
-| `storeId` / `storeSlug` | Only products from this store. |
-| `minPrice` / `maxPrice` | Price range filter. |
-| `sortBy` | Field to sort by (default `createdAt`). |
-| `sortOrder` | `asc` or `desc` (default `desc`). |
-| `pageNumber` | Page to return (default 1). |
-| `pageSize` | Items per page (default 10). |
-
-## What a product looks like
-Each product includes: `id`, `name`, `description`, `price`, `sku`, `imageUrl`,
-`categoryId` + `categoryName`, `storeId` + `storeName` + `storeSlug`, `stockQuantity`,
-`averageRating`, `reviewCount`, and `createdAt`.
-
-## Notes
-- Products from stores that are Pending, Suspended, or Rejected are **not** shown here.
-- Stock quantity is visible so shoppers can see availability before adding to the cart.
+## Good to know
+You'll only see products from shops that are open and approved on Shopit — anything from a
+shop that isn't active won't appear. Stock is shown up front, so you can check something's
+available before adding it to your cart.

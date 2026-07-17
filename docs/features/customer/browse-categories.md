@@ -1,26 +1,19 @@
 # Product Categories
 
 ## What it does
-Categories organize the Shopit catalog into groups (for example "Electronics" or
-"Books"). Shoppers use categories to browse a section of the catalog or to filter the
-product list down to one category.
+Categories sort everything on Shopit into easy-to-browse groups — like "Electronics" or
+"Books". They're a handy way to explore a particular part of the shop or to narrow a long
+list of products down to just the kind of thing you're after.
 
 ## Who can use it
-Anyone can read the list of categories and view a single category — no login required.
-(Creating, editing, and deleting categories is an administrator task and is not part of
-the shopping experience.)
+Anyone can browse categories — you don't need an account, and you don't even have to be
+signed in.
 
 ## How it works
-- Fetch the full list of categories to show a navigation menu or a filter.
-- Each category has an `id` and a `name`.
-- To see the products in a category, call the product list with the `categoryId` filter
-  (see [Browsing and Searching Products](browse-products.md)).
+Pick a category and you'll see the products that belong to it. Every product lives in one
+category, and categories are shared across all the shops on Shopit, so browsing a category
+shows you matching products from everywhere.
 
-## Endpoints
-| Method | Route | Description |
-|---|---|---|
-| GET | `/api/v1/categories` | List all categories. |
-| GET | `/api/v1/categories/{id}` | Get a single category by ID. |
-
-## Notes
-- Categories are shared across all stores; a product belongs to exactly one category.
+## Good to know
+If you'd like to combine a category with a search or a price range, take a look at
+Browsing and Searching Products.

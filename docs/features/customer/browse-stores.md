@@ -1,29 +1,17 @@
-# Viewing a Seller's Storefront
+# Viewing a Seller's Store
 
 ## What it does
-Every seller store has a public storefront page reachable by its **slug** (a URL-friendly
-name). Shoppers can open a storefront to see the store's details and browse only the
-products sold by that store.
+Every seller on Shopit has their own store page. You can open a store to see what it's all
+about and browse just the products that shop sells, all in one place.
 
 ## Who can use it
-Anyone. Storefront pages are public — no login required.
+Anyone. Store pages are open to everyone — no account or sign-in needed.
 
 ## How it works
-- A store is identified in the URL by its `slug` (for example `/stores/acme-gadgets`).
-- Viewing the storefront returns the store's public details: name, slug, description, and
-  status.
-- Viewing the storefront's products returns a paginated product list filtered to that
-  store, using the same product shape as the main catalog.
-- Only **Approved** stores are visible. If a store is missing, Pending, Suspended, or
-  Rejected, both endpoints return **404 Not Found** — and the products endpoint returns
-  404 before listing anything.
+Opening a store shows you its details — its name and a short description — along with its
+products, shown a page at a time just like the main catalog.
 
-## Endpoints
-| Method | Route | Description |
-|---|---|---|
-| GET | `/api/v1/stores/{slug}` | Get a store's public details by slug. |
-| GET | `/api/v1/stores/{slug}/products` | List that store's products (paginated: `pageNumber`, `pageSize`). |
-
-## Notes
-- The storefront is the buyer-facing view of a store. The seller-facing management side
-  (creating a store, managing products, viewing orders) is covered in the Seller docs.
+## Good to know
+You'll only find stores that are open and approved on Shopit. If a shop isn't active, its
+page simply won't be available. A store page is the shopper's view of a seller — the tools
+sellers use to run their shop are a separate part of Shopit.

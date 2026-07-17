@@ -1,29 +1,20 @@
 # Applying a Coupon to the Cart
 
 ## What it does
-Customers can apply a discount coupon to their cart by entering a coupon code. The
-discount is reflected in the cart's totals, and can be removed again before checkout.
+Got a coupon code? Enter it in your cart to get a discount. The saving shows up in your
+totals straight away, and you can remove it again any time before you check out.
 
 ## Who can use it
-Signed-in users with the **Customer** role, operating on their own cart.
+You'll need to be signed in, and the coupon applies to your own cart.
 
 ## How it works
-- Apply a coupon by sending its `code`. The code is required (an empty code is rejected).
-- A coupon can be either a **percentage** discount or a **fixed-amount** discount.
-- After a coupon is applied, the cart response shows `couponCode`, the discount
-  (`discountPercentage` and/or `discountAmount`), and the reduced `finalTotal`.
-- Only one coupon applies to the cart at a time. Removing the coupon returns the cart to
-  its undiscounted total.
-- A coupon can have a usage limit. If the coupon has reached that limit, the discount is
-  rejected **at checkout** (order placement) rather than silently ignored.
+Type in your coupon code and the discount is applied for you. Some coupons take a
+percentage off, others take a fixed amount off — either way, your cart updates to show the
+coupon, how much it's saving you, and your new total. You can use one coupon at a time, and
+removing it puts your cart back to the full price.
 
-## Endpoints
-| Method | Route | Description |
-|---|---|---|
-| POST | `/api/v1/cart/coupon` | Apply a coupon by `code`. |
-| DELETE | `/api/v1/cart/coupon` | Remove the applied coupon. |
-
-## Notes
-- Applying or removing a coupon returns the full updated cart, so the client can show the
-  new totals immediately.
-- The discount carries through to the order: the placed order records a `discountAmount`.
+## Good to know
+A coupon can have a limit on how many times it's used. If it's already been used up, you'll
+find out when you place your order rather than having it quietly ignored. Once your order
+goes through, the discount is recorded on the order, so your saving carries all the way
+through.

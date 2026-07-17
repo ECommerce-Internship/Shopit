@@ -1,39 +1,26 @@
 # Shopping Cart
 
 ## What it does
-The shopping cart holds the products a customer intends to buy before checking out. A
-customer can view the cart, add products, change quantities, remove items, or empty the
-cart entirely. The cart can contain products from several different stores at once.
+Your shopping cart is where the things you're thinking of buying wait until you're ready
+to check out. You can look at what's in it, add products, change how many of something you
+want, take items out, or empty it completely. You can even mix items from different shops
+in the same cart — no need to check out separately from each one.
 
 ## Who can use it
-Signed-in users with the **Customer** role only. Every cart belongs to the logged-in
-customer; you always operate on your own cart. (Sellers and admins do not have a cart.)
+Your cart is your own, and you'll need to be signed in to use it. Everything you see is
+tied to your account, so you're always working with your own cart.
 
-## How it works
-- Each customer has one active cart. Adding, updating, or removing items returns the
-  **full updated cart** so the client always has the latest totals.
-- Quantities must be at least 1. Adding a product requires a valid product ID and a
-  quantity of 1 or more.
-- The cart response shows, per item: product name, SKU, unit price, quantity, line
-  subtotal, and which store the item comes from.
-- The cart also shows the overall `subtotal`, any applied coupon and its discount, and
-  the `finalTotal`. Coupons are covered in [Cart Coupons](cart-coupons.md).
+## What you'll see
+Whenever you add, change, or remove something, your cart updates right away so the totals
+always match what's in it. For each item you'll see the product name, its price, how many
+you've added, and the running total for that item, along with which shop it's coming from.
+At the bottom you'll see your overall total, any coupon you've applied and the money it
+saves you, and the final amount you'd pay.
 
-## Endpoints
-| Method | Route | Description |
-|---|---|---|
-| GET | `/api/v1/cart` | Get the current customer's cart. |
-| POST | `/api/v1/cart/items` | Add an item (`productId`, `quantity`). |
-| PUT | `/api/v1/cart/items/{cartItemId}` | Change an item's quantity. |
-| DELETE | `/api/v1/cart/items/{cartItemId}` | Remove a single item. |
-| DELETE | `/api/v1/cart` | Clear the whole cart. |
+Every item needs a quantity of at least 1.
 
-## Cart contents
-The cart returns: `id`, a list of `items` (each with `productId`, `productName`, `sku`,
-`unitPrice`, `quantity`, `subtotal`, and store info), `subtotal`, optional `couponCode` /
-`discountPercentage` / `discountAmount`, and `finalTotal`.
-
-## Notes
-- Stock and store-availability are re-checked at checkout, not while editing the cart —
-  so an item can sit in your cart but still fail at order time if it sold out or its store
-  became unavailable. See [Placing an Order (Checkout)](place-order-checkout.md).
+## Good to know
+Stock and shop availability are double-checked when you actually place your order — not
+while you're editing your cart. So it's possible for something to sit happily in your cart
+but still be unavailable at checkout if it sold out in the meantime. If that happens,
+you'll be told at order time. Coupons are covered in Cart Coupons.

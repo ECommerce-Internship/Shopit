@@ -5,8 +5,8 @@ A seller opens a store on Shopit to sell products. The store gets a public store
 once an administrator approves it. Sellers can create a store and list the stores they own.
 
 ## Who can use it
-Signed-in users with the **Seller** role. (You get the Seller role by registering as a
-seller — see the Auth docs.)
+Signed-in users with the **Seller** role. (You get the Seller role by signing up as a
+seller — see the customer "Becoming a Seller" doc.)
 
 ## How it works
 - A seller creates a store by giving it a **name** (required, up to 100 characters) and an

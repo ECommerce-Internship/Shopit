@@ -1,45 +1,29 @@
 # Placing an Order (Checkout)
 
 ## What it does
-Turns the customer's active cart into an order. The customer provides a shipping address,
-and Shopit creates the order, reserves stock, and splits the order across the stores the
-items came from.
+Turns everything in your cart into an order. You add a shipping address, and Shopit creates
+your order, sets your items aside, and sorts them out across the shops they came from.
 
 ## Who can use it
-Signed-in users with the **Customer** role. You check out your own cart.
+You'll need to be signed in, and you check out your own cart.
 
 ## How it works
-1. The customer sends a shipping address to place the order.
-2. Shopit validates the cart before creating the order:
-   - The cart must not be empty.
-   - Every item's store must still be **Approved** — otherwise checkout fails listing the
-     unavailable products.
-   - Every item must have enough stock — otherwise checkout fails listing the
-     out-of-stock products.
-   - If a coupon is applied, it must not have exceeded its usage limit.
-3. The order is **split per store**: one "store order" is created for each distinct store
-   in the cart. For each store order, Shopit calculates the store's subtotal, the
-   platform **commission**, and the seller's **net amount**.
-4. Each store order starts in status **Pending**. Stock is decremented for the ordered
-   items.
+Add the address you'd like your order shipped to, and place the order. Before it's
+confirmed, Shopit does a few quick checks to make sure everything's in order:
 
-## Endpoint
-| Method | Route | Description |
-|---|---|---|
-| POST | `/api/v1/orders` | Place an order from the current cart (`shippingAddress`). Returns **201 Created** with the new order. |
+- Your cart isn't empty.
+- Every shop in your cart is still open — if one isn't, we'll tell you which items are
+  affected.
+- Everything you're buying is still in stock — if something's run out, we'll point out
+  which items.
+- If you've used a coupon, it's still valid.
 
-## Request
-```json
-{ "shippingAddress": "123 Main St, City, Country" }
-```
+Once that all checks out, your order is placed. If your cart had items from more than one
+shop, your order is neatly split so each shop can handle its own part, and each part starts
+out as Pending while it waits to be prepared.
 
-## What you get back
-The created order includes: `id`, overall `status`, `totalAmount`, `discountAmount`,
-`shippingAddress`, `createdAt`, the list of `items`, and the per-store breakdown in
-`storeOrders` (each with its store, status, subtotal, and items).
-
-## Notes
-- Placing an order does **not** pay for it. Payment is a separate step — see
-  [Paying for an Order](payments.md).
-- Because an order can span multiple stores, each store fulfills (and can cancel) its own
-  portion independently. See [My Orders](my-orders.md) for how the overall status rolls up.
+## Good to know
+Placing an order and paying for it are two separate steps — see Paying for an Order for the
+next part. Since an order can span several shops, each shop prepares (and, if needed,
+cancels) its own part on its own. See My Orders for how your overall order status comes
+together.

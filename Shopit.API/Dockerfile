@@ -9,6 +9,10 @@ COPY Shopit.API/ Shopit.API/
 COPY Shopit.Application/ Shopit.Application/
 COPY Shopit.Infrastructure/ Shopit.Infrastructure/
 COPY Shopit.Domain/ Shopit.Domain/
+# SCRUM-166: the feature docs are the RAG corpus. Shopit.API.csproj pulls them in
+# via a <Content Include="..\docs\features\**"> item, so they must be present in
+# the build context before publish or ingestion would find an empty corpus.
+COPY docs/ docs/
 
 # See Shopit.MCP/Dockerfile for why this is a single combined publish rather
 # than a separate restore + publish --no-restore split.

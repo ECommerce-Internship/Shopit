@@ -1,39 +1,29 @@
 # Viewing and Cancelling My Orders
 
 ## What it does
-Lets a customer see their order history, open a single order for full details, and cancel
-an order while it is still cancellable.
+See your order history, open any order to check the full details, and cancel an order while
+it's still early enough to do so.
 
 ## Who can use it
-Signed-in users with the **Customer** role. You only see and act on your own orders.
-(Admins can also view any single order by ID and have a separate admin-wide order list.)
+You'll need to be signed in, and you'll only ever see and manage your own orders.
 
 ## How it works
-- **Order history** is paginated. Each summary shows the order status, total, discount,
-  shipping address, date, item count, payment status, and the per-store breakdown.
-- **Order details** show the full order: all items and the per-store "store orders".
-- An order's overall status is **rolled up** from its store orders:
-  - If every store order is Cancelled, the order shows **Cancelled**.
-  - Otherwise the order shows the *least-advanced* active store order, in this order:
-    **Pending → Processing → Shipped → Delivered**.
+Your order history is shown a page at a time. Each order shows its status, the total, any
+discount, where it's being shipped, the date, how many items are in it, and whether it's
+been paid. Open an order to see everything in it, including a breakdown by shop if your
+order included items from more than one seller.
+
+Because an order can include items from several shops, each shop handles its own part.
+Your order's overall status reflects how those parts are progressing — it moves along from
+Pending, to Processing, to Shipped, to Delivered. If every part has been cancelled, the
+whole order shows as Cancelled.
 
 ## Cancelling an order
-- A customer can cancel an order **only while every store order is still Pending**
-  (i.e. no seller has started processing it, and it typically has not been paid).
-- If any part has moved past Pending, cancellation is rejected with a message stating the
-  current status.
-- Cancelling restocks the ordered items.
+You can cancel an order while it's still Pending — that is, before any seller has started
+getting it ready (which usually also means before it's been paid). Once any part of your
+order has moved on from Pending, it can't be cancelled, and we'll let you know its current
+status if you try. When an order is cancelled, the items go back into stock.
 
-## Order statuses
-`Pending` → `Processing` → `Shipped` → `Delivered`, or `Cancelled`.
-
-## Endpoints
-| Method | Route | Description |
-|---|---|---|
-| GET | `/api/v1/orders` | List my orders (paginated: `page`, `pageSize`). |
-| GET | `/api/v1/orders/{id}` | Get one of my orders in full. |
-| PUT | `/api/v1/orders/{id}/cancel` | Cancel my order (only while fully Pending). |
-
-## Notes
-- Sellers advance the status of their own portion of an order — see the seller
-  "Managing Store Orders" doc. As a buyer you see the combined, rolled-up status.
+## Good to know
+Sellers move their own part of your order forward as they prepare and ship it. On your side,
+you simply see the combined status that tells you where your order stands overall.

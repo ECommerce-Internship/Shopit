@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Shopit.Application.DTOs.Reviews;
 using Shopit.Domain.Entities;
@@ -177,5 +177,129 @@ public class ReviewServiceTests
             new SubmitReviewRequest { ProductId = 99999, Rating = 4 }, buyer.Id);
 
         await act.Should().ThrowAsync<NotFoundException>();
+    }
+
+    private async Task<Review> CreateReviewAsync(AppDbContext db, Product product, User user, ReviewStatus status, int rating = 4, string? comment = "Test")
+    {
+        var review = new Review
+        {
+            ProductId = product.Id,
+            UserId = user.Id,
+            Rating = rating,
+            Comment = comment,
+            CreatedAt = DateTime.UtcNow,
+            Status = status
+        };
+        db.Reviews.Add(review);
+        await db.SaveChangesAsync();
+        return review;
+    }
+
+    [Fact]
+    public async Task GetByProductId_OnlyReturnsApprovedReviews()
+    {
+        var db = CreateDb();
+        var (buyer, product, _) = await SeedAsync(db);
+        await CreateReviewAsync(db, product, buyer, ReviewStatus.Approved, comment: "Approved one");
+        await CreateReviewAsync(db, product, buyer, ReviewStatus.Pending, comment: "Pending one");
+        await CreateReviewAsync(db, product, buyer, ReviewStatus.Flagged, comment: "Flagged one");
+        await CreateReviewAsync(db, product, buyer, ReviewStatus.Rejected, comment: "Rejected one");
+
+        var service = new ReviewService(db);
+
+        var result = await service.GetByProductIdAsync(product.Id, new ReviewQueryParameters());
+
+        result.TotalCount.Should().Be(1);
+        result.Reviews.Should().ContainSingle(r => r.Comment == "Approved one");
+    }
+
+    [Fact]
+    public async Task SubmitReview_NewReview_DefaultsToPendingStatus()
+    {
+        var db = CreateDb();
+        var (buyer, product, store) = await SeedAsync(db);
+        await SeedStoreOrderAsync(db, buyer.Id, store, product, OrderStatus.Delivered);
+
+        var service = new ReviewService(db);
+
+        await service.SubmitReviewAsync(
+            new SubmitReviewRequest { ProductId = product.Id, Rating = 5, Comment = "Great" }, buyer.Id);
+
+        var stored = await db.Reviews.FirstAsync(r => r.ProductId == product.Id && r.UserId == buyer.Id);
+        stored.Status.Should().Be(ReviewStatus.Pending);
+    }
+
+    [Fact]
+    public async Task ApproveReviewAsync_SetsStatusApprovedAndModeratedAt()
+    {
+        var db = CreateDb();
+        var (buyer, product, _) = await SeedAsync(db);
+        var review = await CreateReviewAsync(db, product, buyer, ReviewStatus.Flagged);
+
+        var service = new ReviewService(db);
+
+        var result = await service.ApproveReviewAsync(review.Id);
+
+        result.Status.Should().Be(nameof(ReviewStatus.Approved));
+        var stored = await db.Reviews.FirstAsync(r => r.Id == review.Id);
+        stored.Status.Should().Be(ReviewStatus.Approved);
+        stored.ModeratedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task RejectReviewAsync_SetsStatusRejectedAndReason()
+    {
+        var db = CreateDb();
+        var (buyer, product, _) = await SeedAsync(db);
+        var review = await CreateReviewAsync(db, product, buyer, ReviewStatus.Flagged);
+
+        var service = new ReviewService(db);
+
+        var result = await service.RejectReviewAsync(review.Id, new RejectReviewRequest { Reason = "Spam" });
+
+        result.Status.Should().Be(nameof(ReviewStatus.Rejected));
+        var stored = await db.Reviews.FirstAsync(r => r.Id == review.Id);
+        stored.Status.Should().Be(ReviewStatus.Rejected);
+        stored.ModerationReason.Should().Be("Spam");
+        stored.ModeratedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ApproveReviewAsync_ReviewNotFound_ThrowsNotFound()
+    {
+        var db = CreateDb();
+        var service = new ReviewService(db);
+
+        var act = async () => await service.ApproveReviewAsync(99999);
+
+        await act.Should().ThrowAsync<NotFoundException>();
+    }
+
+    [Fact]
+    public async Task RejectReviewAsync_ReviewNotFound_ThrowsNotFound()
+    {
+        var db = CreateDb();
+        var service = new ReviewService(db);
+
+        var act = async () => await service.RejectReviewAsync(99999, new RejectReviewRequest { Reason = "x" });
+
+        await act.Should().ThrowAsync<NotFoundException>();
+    }
+
+    [Fact]
+    public async Task GetModerationQueueAsync_OnlyReturnsFlaggedReviews()
+    {
+        var db = CreateDb();
+        var (buyer, product, _) = await SeedAsync(db);
+        await CreateReviewAsync(db, product, buyer, ReviewStatus.Flagged, comment: "Needs review");
+        await CreateReviewAsync(db, product, buyer, ReviewStatus.Approved, comment: "Fine");
+        await CreateReviewAsync(db, product, buyer, ReviewStatus.Pending, comment: "Waiting");
+
+        var service = new ReviewService(db);
+
+        var result = await service.GetModerationQueueAsync(new ReviewQueryParameters());
+
+        result.TotalCount.Should().Be(1);
+        result.Reviews.Should().ContainSingle(r => r.Comment == "Needs review");
     }
 }

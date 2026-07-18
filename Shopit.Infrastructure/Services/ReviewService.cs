@@ -58,6 +58,7 @@ public class ReviewService : IReviewService
     public async Task<ReviewResponse> SubmitReviewAsync(SubmitReviewRequest request, int currentUserId)
     {
         var product = await _context.Products
+            .Include(p => p.Store)
             .FirstOrDefaultAsync(p => p.Id == request.ProductId && !p.IsDeleted);
 
         if (product is null)
@@ -78,6 +79,10 @@ public class ReviewService : IReviewService
         if (alreadyReviewed)
             throw new ConflictException("You have already reviewed this product.");
 
+        var user = await _context.Users.FirstAsync(u => u.Id == currentUserId);
+
+        var (isSuspicious, reason) = await RunRuleBasedSignalsAsync(product, user, request);
+
         var review = new Review
         {
             ProductId = request.ProductId,
@@ -85,15 +90,78 @@ public class ReviewService : IReviewService
             Rating = request.Rating,
             Comment = request.Comment,
             CreatedAt = DateTime.UtcNow,
-            Status = ReviewStatus.Pending
+            Status = isSuspicious ? ReviewStatus.Flagged : ReviewStatus.Pending,
+            ModerationReason = reason,
+            ModeratedAt = isSuspicious ? DateTime.UtcNow : null
         };
 
         _context.Reviews.Add(review);
         await _context.SaveChangesAsync();
 
-        Log.Information("Review submitted by User {UserId} for Product {ProductId}", currentUserId, request.ProductId);
+        Log.Information("Review submitted by User {UserId} for Product {ProductId} (Status={Status}, Reason={Reason})", currentUserId, request.ProductId, review.Status, reason ?? "none");
 
         return await GetReviewWithUser(review.Id);
+    }
+
+    // Cheap, rule-based fraud signals. Runs before any AI call and short-circuits on the
+    // first match, so a single obvious signal never waits on an external Gemini call.
+    private async Task<(bool isSuspicious, string? reason)> RunRuleBasedSignalsAsync(Product product, User user, SubmitReviewRequest request)
+    {
+        const int burstWindowMinutes = 10;
+        const int maxProductReviewsInWindow = 5;
+        const int maxUserReviewsInWindow = 3;
+        const int newAccountMinutes = 5;
+        const int lowRatingThreshold = 2;
+        const int bombingWindowMinutes = 30;
+        const int bombingCountThreshold = 4;
+
+        // Self-review / seller collusion
+        if (product.Store.OwnerUserId == user.Id)
+            return (true, "Self-review: reviewer owns the store selling this product.");
+
+        var now = DateTime.UtcNow;
+
+        // Very new account posting immediately after registration
+        if (now - user.CreatedAt < TimeSpan.FromMinutes(newAccountMinutes))
+            return (true, "New account posting a review shortly after registration.");
+
+        // Burst of reviews on this product
+        var recentProductReviews = await _context.Reviews
+            .CountAsync(r => r.ProductId == product.Id && r.CreatedAt > now.AddMinutes(-burstWindowMinutes));
+        if (recentProductReviews >= maxProductReviewsInWindow)
+            return (true, "Unusual burst of reviews detected for this product.");
+
+        // Burst of reviews from this reviewer
+        var recentUserReviews = await _context.Reviews
+            .CountAsync(r => r.UserId == user.Id && r.CreatedAt > now.AddMinutes(-burstWindowMinutes));
+        if (recentUserReviews >= maxUserReviewsInWindow)
+            return (true, "Unusual burst of reviews detected from this reviewer.");
+
+        // Duplicate / near-duplicate comment text (exact match, case-insensitive, trimmed)
+        if (!string.IsNullOrWhiteSpace(request.Comment))
+        {
+            var normalized = request.Comment.Trim().ToLowerInvariant();
+            var isDuplicate = await _context.Reviews
+                .Where(r => r.Comment != null)
+                .AnyAsync(r => r.Comment!.Trim().ToLower() == normalized);
+            if (isDuplicate)
+                return (true, "Duplicate review text detected.");
+        }
+
+        // Competitor-bombing heuristic: burst of low ratings on this seller's store
+        if (request.Rating <= lowRatingThreshold)
+        {
+            var recentLowRatingsForStore = await _context.Reviews
+                .Include(r => r.Product)
+                .CountAsync(r =>
+                    r.Product.StoreId == product.StoreId &&
+                    r.Rating <= lowRatingThreshold &&
+                    r.CreatedAt > now.AddMinutes(-bombingWindowMinutes));
+            if (recentLowRatingsForStore >= bombingCountThreshold)
+                return (true, "Burst of low ratings for this store detected (possible competitor bombing).");
+        }
+
+        return (false, null);
     }
 
     public async Task<ProductReviewsResponse> GetAllReviewsAsync(ReviewQueryParameters parameters)
@@ -126,6 +194,34 @@ public class ReviewService : IReviewService
         var query = _context.Reviews
             .Include(r => r.User)
             .Where(r => r.Status == ReviewStatus.Flagged)
+            .OrderByDescending(r => r.CreatedAt)
+            .AsQueryable();
+
+        var totalCount = await query.CountAsync();
+
+        var reviews = await query
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return new ProductReviewsResponse
+        {
+            TotalCount = totalCount,
+            Reviews = reviews.Select(MapToResponse).ToList()
+        };
+    }
+
+    public async Task<ProductReviewsResponse> GetFlaggedForSellerAsync(int sellerUserId, ReviewQueryParameters parameters)
+    {
+        var pageNumber = parameters.PageNumber <= 0 ? 1 : parameters.PageNumber;
+        var pageSize = parameters.PageSize <= 0 ? 10 : parameters.PageSize;
+        if (pageSize > 100) pageSize = 100;
+
+        var query = _context.Reviews
+            .Include(r => r.User)
+            .Include(r => r.Product)
+            .Where(r => r.Product.Store.OwnerUserId == sellerUserId &&
+                        (r.Status == ReviewStatus.Flagged || r.Status == ReviewStatus.Rejected))
             .OrderByDescending(r => r.CreatedAt)
             .AsQueryable();
 

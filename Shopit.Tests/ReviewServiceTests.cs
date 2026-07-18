@@ -219,6 +219,8 @@ public class ReviewServiceTests
         var db = CreateDb();
         var (buyer, product, store) = await SeedAsync(db);
         await SeedStoreOrderAsync(db, buyer.Id, store, product, OrderStatus.Delivered);
+        buyer.CreatedAt = DateTime.UtcNow.AddDays(-30);
+        await db.SaveChangesAsync();
 
         var service = new ReviewService(db);
 
@@ -301,5 +303,54 @@ public class ReviewServiceTests
 
         result.TotalCount.Should().Be(1);
         result.Reviews.Should().ContainSingle(r => r.Comment == "Needs review");
+    }
+
+    [Fact]
+    public async Task SubmitReview_SelfReview_FlagsAutomaticallyWithReason()
+    {
+        var db = CreateDb();
+        var (buyer, product, store) = await SeedAsync(db);
+        buyer.CreatedAt = DateTime.UtcNow.AddDays(-30);
+        store.OwnerUserId = buyer.Id;
+        await db.SaveChangesAsync();
+        await SeedStoreOrderAsync(db, buyer.Id, store, product, OrderStatus.Delivered);
+
+        var service = new ReviewService(db);
+
+        await service.SubmitReviewAsync(
+            new SubmitReviewRequest { ProductId = product.Id, Rating = 5, Comment = "Great" }, buyer.Id);
+
+        var stored = await db.Reviews.FirstAsync(r => r.ProductId == product.Id && r.UserId == buyer.Id);
+        stored.Status.Should().Be(ReviewStatus.Flagged);
+        stored.ModerationReason.Should().Contain("Self-review");
+    }
+
+    [Fact]
+    public async Task SubmitReview_BurstOfReviewsOnProduct_FlagsAutomatically()
+    {
+        var db = CreateDb();
+        var (buyer, product, store) = await SeedAsync(db);
+        buyer.CreatedAt = DateTime.UtcNow.AddDays(-30);
+        await db.SaveChangesAsync();
+        await SeedStoreOrderAsync(db, buyer.Id, store, product, OrderStatus.Delivered);
+
+        // Simulate 5 other recent reviews on the same product to trip the burst threshold.
+        for (int i = 0; i < 5; i++)
+        {
+            var otherUser = new User { FirstName = "U", LastName = i.ToString(), Email = $"burst{i}@s.com", PasswordHash = "h", Role = UserRole.Customer, CreatedAt = DateTime.UtcNow.AddDays(-30) };
+            db.Users.Add(otherUser);
+            await db.SaveChangesAsync();
+            db.Reviews.Add(new Review { ProductId = product.Id, UserId = otherUser.Id, Rating = 4, CreatedAt = DateTime.UtcNow, Status = ReviewStatus.Pending });
+        }
+        await db.SaveChangesAsync();
+
+        var service = new ReviewService(db);
+
+        await service.SubmitReviewAsync(
+            new SubmitReviewRequest { ProductId = product.Id, Rating = 5, Comment = "Also great" }, buyer.Id);
+
+        var stored = await db.Reviews.FirstAsync(r => r.ProductId == product.Id && r.UserId == buyer.Id);
+        stored.Status.Should().Be(ReviewStatus.Flagged);
+        stored.ModerationReason.Should().Contain("burst");
     }
 }

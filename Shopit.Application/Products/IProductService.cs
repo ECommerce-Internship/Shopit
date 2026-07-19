@@ -10,6 +10,16 @@ public interface IProductService
 {
     Task<PaginatedResult<ProductResponse>> GetAllAsync(ProductQueryParameters queryParameters);
 
+    /// <summary>
+    /// Gets products owned by the current caller for seller/admin management screens.
+    /// Unlike <see cref="GetAllAsync"/>, this is NOT restricted to products in
+    /// Approved stores — a seller must be able to see and manage their own products
+    /// while their store is Pending/Suspended, even though those products are not
+    /// publicly listable. A seller only sees products from stores they own; an
+    /// admin sees all products (optionally filtered to one store via StoreId).
+    /// </summary>
+    Task<PaginatedResult<ProductResponse>> GetMineAsync(ProductQueryParameters queryParameters, int userId, bool isAdmin);
+
     Task<ProductResponse> GetByIdAsync(int id);
 
     Task<ProductResponse> CreateAsync(CreateProductRequest request, int userId, bool isAdmin);

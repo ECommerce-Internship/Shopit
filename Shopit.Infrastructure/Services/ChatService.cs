@@ -11,10 +11,11 @@ namespace Shopit.Infrastructure.Services;
 
 /// <summary>
 /// Bridges a chat conversation between Gemini's function-calling API and the
-/// Shopit MCP server. Each call connects to the MCP server fresh, lists its
-/// tools, filters them by the caller's role, and runs a function-calling loop
-/// with Gemini (capped at <see cref="MaxIterations"/> turns) until Gemini
-/// returns a plain text reply.
+/// Shopit MCP server. Each call connects to the MCP server fresh over HTTP
+/// (SCRUM-153 - previously stdio, spawning the server as a child process per
+/// request), lists its tools, filters them by the caller's role, and runs a
+/// function-calling loop with Gemini (capped at <see cref="MaxIterations"/>
+/// turns) until Gemini returns a plain text reply.
 ///
 /// Conversation persistence (SCRUM-109): prior turns are loaded from
 /// <see cref="IConversationStore"/> at the start of the request (scoped to
@@ -114,8 +115,7 @@ public class ChatService : IChatService
     private readonly ILogger<ChatService> _logger;
     private readonly string _apiKey;
     private readonly string _model;
-    private readonly string _mcpExePath;
-    private readonly string _mcpWorkingDirectory;
+    private readonly string _mcpBaseUrl;
     private readonly int _maxHistoryEntries;
 
     public ChatService(
@@ -131,8 +131,10 @@ public class ChatService : IChatService
         _model = string.IsNullOrWhiteSpace(configuration["Gemini:Model"])
             ? "gemini-2.5-flash"
             : configuration["Gemini:Model"]!;
-        _mcpExePath = configuration["Gemini:McpExePath"] ?? string.Empty;
-        _mcpWorkingDirectory = configuration["Gemini:McpWorkingDirectory"] ?? string.Empty;
+        // SCRUM-153: the MCP server's base URL, externalized so it can point
+        // at a local dev instance or the shopit-mcp Docker service without
+        // any code change — see Mcp:BaseUrl in appsettings.json.
+        _mcpBaseUrl = configuration["Mcp:BaseUrl"] ?? string.Empty;
         _maxHistoryEntries = configuration.GetValue<int?>("Chat:MaxHistoryEntries") ?? 20;
     }
 
@@ -146,8 +148,8 @@ public class ChatService : IChatService
         if (string.IsNullOrWhiteSpace(_apiKey))
             throw new ExternalServiceException("Gemini API key is not configured.");
 
-        if (string.IsNullOrWhiteSpace(_mcpExePath) || string.IsNullOrWhiteSpace(_mcpWorkingDirectory))
-            throw new ExternalServiceException("The MCP server path is not configured.");
+        if (string.IsNullOrWhiteSpace(_mcpBaseUrl))
+            throw new ExternalServiceException("The MCP server URL is not configured.");
 
         var resolvedConversationId = string.IsNullOrWhiteSpace(conversationId)
             ? Guid.NewGuid().ToString()
@@ -165,11 +167,12 @@ public class ChatService : IChatService
         var contents = history?.DeepClone() as JsonArray ?? new JsonArray();
         contents.Add(BuildUserTextContent(message));
 
-        var transport = new StdioClientTransport(new StdioClientTransportOptions
+        // SCRUM-153: connect to the MCP server over HTTP rather than spawning
+        // it as a child process via stdio. The server now runs as its own
+        // independent process/container, reachable at _mcpBaseUrl.
+        var transport = new HttpClientTransport(new HttpClientTransportOptions
         {
-            Name = "Shopit.MCP",
-            Command = _mcpExePath,
-            WorkingDirectory = _mcpWorkingDirectory,
+            Endpoint = new Uri(_mcpBaseUrl),
         });
 
         await using var mcpClient = await McpClient.CreateAsync(transport, cancellationToken: cancellationToken);

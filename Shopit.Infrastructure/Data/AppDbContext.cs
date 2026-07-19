@@ -12,6 +12,7 @@ public class AppDbContext : DbContext
 
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Product> Products => Set<Product>();
     public DbSet<Inventory> Inventories => Set<Inventory>();
@@ -67,6 +68,12 @@ public class AppDbContext : DbContext
             .HasOne(rt => rt.User)
             .WithMany(u => u.RefreshTokens)
             .HasForeignKey(rt => rt.UserId);
+
+        // User -> PasswordResetTokens (one-to-many)
+        modelBuilder.Entity<PasswordResetToken>()
+            .HasOne(t => t.User)
+            .WithMany(u => u.PasswordResetTokens)
+            .HasForeignKey(t => t.UserId);
 
         // User -> ExternalLogins (one-to-many)
         modelBuilder.Entity<UserExternalLogin>()

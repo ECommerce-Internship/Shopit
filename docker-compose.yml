@@ -11,12 +11,22 @@ services:
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
     container_name: redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redisinsight:
     image: redis/redisinsight:latest
@@ -52,5 +62,69 @@ services:
     command: testuser:testpass:::upload
     profiles:
       - dev
+
+  # SCRUM-153: MCP server, productionized from a stdio child process spawned
+  # per-request into its own independent service, reachable by the api
+  # service over the internal Docker network at http://shopit-mcp:8080.
+  # Healthcheck added here (and, to make depends_on/service_healthy work at
+  # all, also retrofitted onto postgres/redis above, which previously had
+  # none despite the ticket's "same pattern as Redis/SEQ" framing).
+  shopit-mcp:
+    build:
+      context: .
+      dockerfile: Shopit.MCP/Dockerfile
+    container_name: shopit-mcp
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=ShopitDb;Username=postgres;Password=postgres"
+      ConnectionStrings__Redis: "redis:6379"
+      ConnectionStrings__AzureQueue: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;QueueEndpoint=http://azurite:10001/devstoreaccount1;"
+      AzureQueue__QueueName: "low-stock-alerts"
+    ports:
+      - "6001:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # SCRUM-153: API container, so `docker compose up` brings up the full
+  # stack (API + MCP server + Postgres + Redis + SEQ + Azurite) with chat
+  # working end-to-end, with no manual steps - per the story's acceptance
+  # criteria. Previously there was no API Dockerfile/service at all.
+  api:
+    build:
+      context: .
+      dockerfile: Shopit.API/Dockerfile
+    container_name: api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      shopit-mcp:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=ShopitDb;Username=postgres;Password=postgres"
+      ConnectionStrings__Redis: "redis:6379"
+      ConnectionStrings__AzureBlobStorage: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
+      Azure__StorageConnectionString: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;QueueEndpoint=http://azurite:10001/devstoreaccount1;"
+      Azure__LowStockQueueName: "low-stock-alerts"
+      Azure__OrderConfirmationsQueueName: "order-confirmations"
+      Mcp__BaseUrl: "http://shopit-mcp:8080"
+      Seq__ServerUrl: "http://seq:80"
+      # Not committed - set GEMINI_API_KEY in a local .env file (already
+      # gitignored). Falls back to empty if unset, which fails fast with
+      # ChatService's existing "Gemini API key is not configured." error
+      # rather than silently misbehaving.
+      Gemini__ApiKey: ${GEMINI_API_KEY:-}
+    ports:
+      - "5129:8080"
+
 volumes:
   postgres_data:

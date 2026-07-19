@@ -4,4 +4,5 @@ public interface IEmailService
 {
     Task SendOrderConfirmationAsync(int orderId, string email);
     Task SendLowStockAlertAsync(string adminEmail, string productName, int currentQty, int threshold);
+    Task SendPasswordResetCodeAsync(string email, string code);
 }

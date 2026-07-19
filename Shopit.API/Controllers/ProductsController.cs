@@ -70,6 +70,26 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>
+    /// Gets products owned by the current seller (or all products, for an admin),
+    /// for use on seller/admin management screens. Unlike <see cref="GetAll"/>,
+    /// this is not restricted to products in Approved stores, since a seller must
+    /// be able to see and manage their own products while their store is
+    /// Pending/Suspended awaiting moderation.
+    /// </summary>
+    [HttpGet("mine")]
+    [Authorize(Roles = "Seller,Admin")]
+    [ProducesResponseType(typeof(PaginatedResult<ProductResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<PaginatedResult<ProductResponse>>> GetMine(
+        [FromQuery] ProductQueryParameters queryParameters)
+    {
+        var products = await _productService.GetMineAsync(queryParameters, GetUserId(), IsAdmin());
+        return Ok(products);
+    }
+
+    /// <summary>
     /// Creates a new product.
     /// </summary>
     [HttpPost]

@@ -212,6 +212,82 @@ public class ProductServiceTests
     }
 
     [Fact]
+    public async Task GetMine_SellerWithPendingStore_SeesOwnProductButNotOthers()
+    {
+        await using var context = CreateContext();
+        await SeedCategoryAsync(context); // seeds the Approved "platform" store, owned by user 1
+
+        // A second seller (user 2) with a Pending store — not yet visible on the
+        // public storefront, but must still be manageable by its owner.
+        context.Stores.Add(new Store
+        {
+            Id = SecondStoreId,
+            Name = "Pending Seller Store",
+            Slug = "pending-seller-store",
+            Status = StoreStatus.Pending,
+            CommissionRate = 0.1m,
+            OwnerUserId = 2
+        });
+        await context.SaveChangesAsync();
+
+        await CreateService(context).CreateAsync(new CreateProductRequest
+        {
+            Name = "Platform Widget", Price = 5m, Sku = "PLATFORM-1", CategoryId = 1, StoreId = PlatformStoreId, InitialStock = 3
+        }, userId: 1, isAdmin: false);
+
+        await CreateService(context).CreateAsync(new CreateProductRequest
+        {
+            Name = "Pending Store Widget", Price = 8m, Sku = "PENDING-1", CategoryId = 1, StoreId = SecondStoreId, InitialStock = 7
+        }, userId: 2, isAdmin: false);
+
+        var mineForSecondSeller = await CreateService(context).GetMineAsync(
+            new ProductQueryParameters { PageNumber = 1, PageSize = 50 }, userId: 2, isAdmin: false);
+
+        mineForSecondSeller.Items.Should().ContainSingle(p => p.Sku == "PENDING-1");
+        mineForSecondSeller.Items.Should().NotContain(p => p.Sku == "PLATFORM-1");
+
+        var mineForFirstSeller = await CreateService(context).GetMineAsync(
+            new ProductQueryParameters { PageNumber = 1, PageSize = 50 }, userId: 1, isAdmin: false);
+
+        mineForFirstSeller.Items.Should().ContainSingle(p => p.Sku == "PLATFORM-1");
+        mineForFirstSeller.Items.Should().NotContain(p => p.Sku == "PENDING-1");
+    }
+
+    [Fact]
+    public async Task GetMine_Admin_SeesProductsAcrossAllStores()
+    {
+        await using var context = CreateContext();
+        await SeedCategoryAsync(context);
+
+        context.Stores.Add(new Store
+        {
+            Id = SecondStoreId,
+            Name = "Another Seller Store",
+            Slug = "another-seller-store",
+            Status = StoreStatus.Pending,
+            CommissionRate = 0.1m,
+            OwnerUserId = 2
+        });
+        await context.SaveChangesAsync();
+
+        await CreateService(context).CreateAsync(new CreateProductRequest
+        {
+            Name = "Platform Widget", Price = 5m, Sku = "PLATFORM-2", CategoryId = 1, StoreId = PlatformStoreId, InitialStock = 3
+        }, userId: 1, isAdmin: false);
+
+        await CreateService(context).CreateAsync(new CreateProductRequest
+        {
+            Name = "Other Widget", Price = 8m, Sku = "OTHER-2", CategoryId = 1, StoreId = SecondStoreId, InitialStock = 7
+        }, userId: 2, isAdmin: false);
+
+        var result = await CreateService(context).GetMineAsync(
+            new ProductQueryParameters { PageNumber = 1, PageSize = 50 }, userId: 999, isAdmin: true);
+
+        result.Items.Should().Contain(p => p.Sku == "PLATFORM-2");
+        result.Items.Should().Contain(p => p.Sku == "OTHER-2");
+    }
+
+    [Fact]
     public async Task GetProductById_ExistingId_ReturnsProductResponse()
     {
         await using var context = CreateContext();

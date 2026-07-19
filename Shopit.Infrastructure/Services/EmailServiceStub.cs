@@ -13,4 +13,9 @@ public class EmailServiceStub : IEmailService
     {
         return Task.CompletedTask;
     }
+
+    public Task SendPasswordResetCodeAsync(string email, string code)
+    {
+        return Task.CompletedTask;
+    }
 }

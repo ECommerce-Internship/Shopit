@@ -85,7 +85,7 @@ public class ReviewService : IReviewService
         var user = await _context.Users.FirstAsync(u => u.Id == currentUserId);
 
         var (ruleFlagged, ruleReason) = await RunRuleBasedSignalsAsync(product, user, request);
-        var (finalStatus, moderationReason) = await DetermineFinalStatusAsync(ruleFlagged, ruleReason, request);
+        var (finalStatus, moderationReason, moderationScore) = await DetermineFinalStatusAsync(ruleFlagged, ruleReason, request);
 
         var review = new Review
         {
@@ -96,6 +96,7 @@ public class ReviewService : IReviewService
             CreatedAt = DateTime.UtcNow,
             Status = finalStatus,
             ModerationReason = moderationReason,
+            ModerationScore = moderationScore,
             ModeratedAt = finalStatus == ReviewStatus.Pending ? null : DateTime.UtcNow
         };
 
@@ -110,27 +111,28 @@ public class ReviewService : IReviewService
     // Combines the rule-based verdict with AI content moderation (when the rules found
     // nothing and there is comment text to assess) into the review's final status.
     // Gemini failures fail open to Flagged rather than blocking submission or silently
-    // publishing unmoderated content.
-    private async Task<(ReviewStatus status, string? reason)> DetermineFinalStatusAsync(
+    // publishing unmoderated content. ModerationScore reflects rule certainty (1.0) or
+    // the AI's confidence in its verdict, so admins can gauge how sure the pipeline was.
+    private async Task<(ReviewStatus status, string? reason, double? score)> DetermineFinalStatusAsync(
         bool ruleFlagged, string? ruleReason, SubmitReviewRequest request)
     {
         if (ruleFlagged)
-            return (ReviewStatus.Flagged, ruleReason);
+            return (ReviewStatus.Flagged, ruleReason, 1.0);
 
         if (string.IsNullOrWhiteSpace(request.Comment))
-            return (ReviewStatus.Approved, null);
+            return (ReviewStatus.Approved, null, null);
 
         try
         {
             var verdict = await _moderationService.ModerateReviewAsync(request.Comment, request.Rating);
             return verdict.IsSuspicious
-                ? (ReviewStatus.Flagged, $"{verdict.Category}: {verdict.Reason}")
-                : (ReviewStatus.Approved, (string?)null);
+                ? (ReviewStatus.Flagged, $"{verdict.Category}: {verdict.Reason}", verdict.Confidence)
+                : (ReviewStatus.Approved, (string?)null, verdict.Confidence);
         }
         catch (ExternalServiceException ex)
         {
             Log.Warning(ex, "AI review moderation unavailable; failing open to Flagged.");
-            return (ReviewStatus.Flagged, "AI moderation unavailable; flagged for manual review.");
+            return (ReviewStatus.Flagged, "AI moderation unavailable; flagged for manual review.", null);
         }
     }
 
@@ -386,6 +388,7 @@ public class ReviewService : IReviewService
         CreatedAt = review.CreatedAt,
         Status = review.Status.ToString(),
         ModerationReason = review.ModerationReason,
-        ModeratedAt = review.ModeratedAt
+        ModeratedAt = review.ModeratedAt,
+        ModerationScore = review.ModerationScore
     };
 }

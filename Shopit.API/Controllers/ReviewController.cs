@@ -27,15 +27,26 @@ public class ReviewController : ControllerBase
         var result = await _reviewService.GetAllReviewsAsync(parameters);
         return Ok(result);
     }
+    /// <summary>
+    /// Lists reviews currently awaiting moderation (Flagged status) for admin review.
+    /// </summary>
     [HttpGet("moderation-queue")]
     [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ProductReviewsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetModerationQueue([FromQuery] ReviewQueryParameters parameters)
     {
         var result = await _reviewService.GetModerationQueueAsync(parameters);
         return Ok(result);
     }
+    /// <summary>
+    /// Lists flagged or rejected reviews on the current seller's own products, read-only.
+    /// </summary>
     [HttpGet("mine/flagged")]
     [Authorize]
+    [ProducesResponseType(typeof(ProductReviewsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetMyFlaggedReviews([FromQuery] ReviewQueryParameters parameters)
     {
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -51,15 +62,29 @@ public class ReviewController : ControllerBase
         var result = await _reviewService.SubmitReviewAsync(request, userId);
         return CreatedAtAction(nameof(GetByProductId), new { productId = result.ProductId }, result);
     }
+    /// <summary>
+    /// Approves a flagged review, making it publicly visible.
+    /// </summary>
     [HttpPost("{reviewId}/approve")]
     [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ReviewResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Approve(int reviewId)
     {
         var result = await _reviewService.ApproveReviewAsync(reviewId);
         return Ok(result);
     }
+    /// <summary>
+    /// Rejects a flagged review with an optional reason. The review stays hidden from public view.
+    /// </summary>
     [HttpPost("{reviewId}/reject")]
     [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ReviewResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Reject(int reviewId, [FromBody] RejectReviewRequest request)
     {
         var result = await _reviewService.RejectReviewAsync(reviewId, request);

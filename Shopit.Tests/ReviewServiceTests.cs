@@ -1,4 +1,6 @@
 ﻿using FluentAssertions;
+using Moq;
+using Shopit.Application.AI;
 using Microsoft.EntityFrameworkCore;
 using Shopit.Application.DTOs.Reviews;
 using Shopit.Domain.Entities;
@@ -18,6 +20,14 @@ public class ReviewServiceTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         return new AppDbContext(options);
+    }
+
+    private static IReviewModerationService CreateGenuineModerationService()
+    {
+        var mock = new Mock<IReviewModerationService>();
+        mock.Setup(m => m.ModerateReviewAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ReviewModerationVerdict { IsSuspicious = false, Category = "genuine", Confidence = 0.95, Reason = "Looks like a normal review." });
+        return mock.Object;
     }
 
     private async Task<(User buyer, Product product, Store store)> SeedAsync(AppDbContext db)
@@ -81,7 +91,7 @@ public class ReviewServiceTests
         var (buyer, product, store) = await SeedAsync(db);
         await SeedStoreOrderAsync(db, buyer.Id, store, product, OrderStatus.Delivered);
 
-        var service = new ReviewService(db);
+        var service = new ReviewService(db, CreateGenuineModerationService());
 
         var result = await service.SubmitReviewAsync(
             new SubmitReviewRequest { ProductId = product.Id, Rating = 5, Comment = "Great" }, buyer.Id);
@@ -100,7 +110,7 @@ public class ReviewServiceTests
         var db = CreateDb();
         var (buyer, product, _) = await SeedAsync(db);
 
-        var service = new ReviewService(db);
+        var service = new ReviewService(db, CreateGenuineModerationService());
 
         var act = async () => await service.SubmitReviewAsync(
             new SubmitReviewRequest { ProductId = product.Id, Rating = 4 }, buyer.Id);
@@ -119,7 +129,7 @@ public class ReviewServiceTests
         var (buyer, product, store) = await SeedAsync(db);
         await SeedStoreOrderAsync(db, buyer.Id, store, product, status);
 
-        var service = new ReviewService(db);
+        var service = new ReviewService(db, CreateGenuineModerationService());
 
         var act = async () => await service.SubmitReviewAsync(
             new SubmitReviewRequest { ProductId = product.Id, Rating = 4 }, buyer.Id);
@@ -139,7 +149,7 @@ public class ReviewServiceTests
         db.Users.Add(otherUser);
         await db.SaveChangesAsync();
 
-        var service = new ReviewService(db);
+        var service = new ReviewService(db, CreateGenuineModerationService());
 
         var act = async () => await service.SubmitReviewAsync(
             new SubmitReviewRequest { ProductId = product.Id, Rating = 4 }, otherUser.Id);
@@ -154,7 +164,7 @@ public class ReviewServiceTests
         var (buyer, product, store) = await SeedAsync(db);
         await SeedStoreOrderAsync(db, buyer.Id, store, product, OrderStatus.Delivered);
 
-        var service = new ReviewService(db);
+        var service = new ReviewService(db, CreateGenuineModerationService());
 
         await service.SubmitReviewAsync(
             new SubmitReviewRequest { ProductId = product.Id, Rating = 5 }, buyer.Id);
@@ -171,7 +181,7 @@ public class ReviewServiceTests
         var db = CreateDb();
         var (buyer, _, _) = await SeedAsync(db);
 
-        var service = new ReviewService(db);
+        var service = new ReviewService(db, CreateGenuineModerationService());
 
         var act = async () => await service.SubmitReviewAsync(
             new SubmitReviewRequest { ProductId = 99999, Rating = 4 }, buyer.Id);
@@ -205,7 +215,7 @@ public class ReviewServiceTests
         await CreateReviewAsync(db, product, buyer, ReviewStatus.Flagged, comment: "Flagged one");
         await CreateReviewAsync(db, product, buyer, ReviewStatus.Rejected, comment: "Rejected one");
 
-        var service = new ReviewService(db);
+        var service = new ReviewService(db, CreateGenuineModerationService());
 
         var result = await service.GetByProductIdAsync(product.Id, new ReviewQueryParameters());
 
@@ -214,7 +224,7 @@ public class ReviewServiceTests
     }
 
     [Fact]
-    public async Task SubmitReview_NewReview_DefaultsToPendingStatus()
+    public async Task SubmitReview_CleanReview_BecomesApprovedAfterRulesAndAi()
     {
         var db = CreateDb();
         var (buyer, product, store) = await SeedAsync(db);
@@ -222,13 +232,13 @@ public class ReviewServiceTests
         buyer.CreatedAt = DateTime.UtcNow.AddDays(-30);
         await db.SaveChangesAsync();
 
-        var service = new ReviewService(db);
+        var service = new ReviewService(db, CreateGenuineModerationService());
 
         await service.SubmitReviewAsync(
             new SubmitReviewRequest { ProductId = product.Id, Rating = 5, Comment = "Great" }, buyer.Id);
 
         var stored = await db.Reviews.FirstAsync(r => r.ProductId == product.Id && r.UserId == buyer.Id);
-        stored.Status.Should().Be(ReviewStatus.Pending);
+        stored.Status.Should().Be(ReviewStatus.Approved);
     }
 
     [Fact]
@@ -238,7 +248,7 @@ public class ReviewServiceTests
         var (buyer, product, _) = await SeedAsync(db);
         var review = await CreateReviewAsync(db, product, buyer, ReviewStatus.Flagged);
 
-        var service = new ReviewService(db);
+        var service = new ReviewService(db, CreateGenuineModerationService());
 
         var result = await service.ApproveReviewAsync(review.Id);
 
@@ -255,7 +265,7 @@ public class ReviewServiceTests
         var (buyer, product, _) = await SeedAsync(db);
         var review = await CreateReviewAsync(db, product, buyer, ReviewStatus.Flagged);
 
-        var service = new ReviewService(db);
+        var service = new ReviewService(db, CreateGenuineModerationService());
 
         var result = await service.RejectReviewAsync(review.Id, new RejectReviewRequest { Reason = "Spam" });
 
@@ -270,7 +280,7 @@ public class ReviewServiceTests
     public async Task ApproveReviewAsync_ReviewNotFound_ThrowsNotFound()
     {
         var db = CreateDb();
-        var service = new ReviewService(db);
+        var service = new ReviewService(db, CreateGenuineModerationService());
 
         var act = async () => await service.ApproveReviewAsync(99999);
 
@@ -281,7 +291,7 @@ public class ReviewServiceTests
     public async Task RejectReviewAsync_ReviewNotFound_ThrowsNotFound()
     {
         var db = CreateDb();
-        var service = new ReviewService(db);
+        var service = new ReviewService(db, CreateGenuineModerationService());
 
         var act = async () => await service.RejectReviewAsync(99999, new RejectReviewRequest { Reason = "x" });
 
@@ -297,7 +307,7 @@ public class ReviewServiceTests
         await CreateReviewAsync(db, product, buyer, ReviewStatus.Approved, comment: "Fine");
         await CreateReviewAsync(db, product, buyer, ReviewStatus.Pending, comment: "Waiting");
 
-        var service = new ReviewService(db);
+        var service = new ReviewService(db, CreateGenuineModerationService());
 
         var result = await service.GetModerationQueueAsync(new ReviewQueryParameters());
 
@@ -315,7 +325,7 @@ public class ReviewServiceTests
         await db.SaveChangesAsync();
         await SeedStoreOrderAsync(db, buyer.Id, store, product, OrderStatus.Delivered);
 
-        var service = new ReviewService(db);
+        var service = new ReviewService(db, CreateGenuineModerationService());
 
         await service.SubmitReviewAsync(
             new SubmitReviewRequest { ProductId = product.Id, Rating = 5, Comment = "Great" }, buyer.Id);
@@ -344,7 +354,7 @@ public class ReviewServiceTests
         }
         await db.SaveChangesAsync();
 
-        var service = new ReviewService(db);
+        var service = new ReviewService(db, CreateGenuineModerationService());
 
         await service.SubmitReviewAsync(
             new SubmitReviewRequest { ProductId = product.Id, Rating = 5, Comment = "Also great" }, buyer.Id);
@@ -352,5 +362,51 @@ public class ReviewServiceTests
         var stored = await db.Reviews.FirstAsync(r => r.ProductId == product.Id && r.UserId == buyer.Id);
         stored.Status.Should().Be(ReviewStatus.Flagged);
         stored.ModerationReason.Should().Contain("burst");
+    }
+
+    [Fact]
+    public async Task SubmitReview_AiFlagsContent_SetsStatusFlaggedWithAiReason()
+    {
+        var db = CreateDb();
+        var (buyer, product, store) = await SeedAsync(db);
+        await SeedStoreOrderAsync(db, buyer.Id, store, product, OrderStatus.Delivered);
+        buyer.CreatedAt = DateTime.UtcNow.AddDays(-30);
+        await db.SaveChangesAsync();
+
+        var moderationMock = new Mock<IReviewModerationService>();
+        moderationMock.Setup(m => m.ModerateReviewAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ReviewModerationVerdict { IsSuspicious = true, Category = "toxic", Confidence = 0.9, Reason = "Contains offensive language." });
+
+        var service = new ReviewService(db, moderationMock.Object);
+
+        await service.SubmitReviewAsync(
+            new SubmitReviewRequest { ProductId = product.Id, Rating = 1, Comment = "This is terrible" }, buyer.Id);
+
+        var stored = await db.Reviews.FirstAsync(r => r.ProductId == product.Id && r.UserId == buyer.Id);
+        stored.Status.Should().Be(ReviewStatus.Flagged);
+        stored.ModerationReason.Should().Contain("toxic");
+    }
+
+    [Fact]
+    public async Task SubmitReview_AiModerationThrows_FailsOpenToFlagged()
+    {
+        var db = CreateDb();
+        var (buyer, product, store) = await SeedAsync(db);
+        await SeedStoreOrderAsync(db, buyer.Id, store, product, OrderStatus.Delivered);
+        buyer.CreatedAt = DateTime.UtcNow.AddDays(-30);
+        await db.SaveChangesAsync();
+
+        var moderationMock = new Mock<IReviewModerationService>();
+        moderationMock.Setup(m => m.ModerateReviewAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ExternalServiceException("The Gemini API is currently unavailable."));
+
+        var service = new ReviewService(db, moderationMock.Object);
+
+        await service.SubmitReviewAsync(
+            new SubmitReviewRequest { ProductId = product.Id, Rating = 5, Comment = "Great product" }, buyer.Id);
+
+        var stored = await db.Reviews.FirstAsync(r => r.ProductId == product.Id && r.UserId == buyer.Id);
+        stored.Status.Should().Be(ReviewStatus.Flagged);
+        stored.ModerationReason.Should().Contain("unavailable");
     }
 }

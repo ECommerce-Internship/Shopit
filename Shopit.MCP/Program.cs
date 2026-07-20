@@ -42,6 +42,7 @@ builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IGeminiService, GeminiService>();
+builder.Services.AddScoped<IReviewModerationService, ReviewModerationService>();
 
 // SCRUM-153: HTTP (streamable) transport, replacing stdio. The server now
 // runs as an independent ASP.NET Core process/container, reachable by the

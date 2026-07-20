@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Shopit.Application.AI;
 using Serilog;
 using Shopit.Application.DTOs.Reviews;
 using Shopit.Application.Interfaces;
@@ -12,10 +13,12 @@ namespace Shopit.Infrastructure.Services;
 public class ReviewService : IReviewService
 {
     private readonly AppDbContext _context;
+    private readonly IReviewModerationService _moderationService;
 
-    public ReviewService(AppDbContext context)
+    public ReviewService(AppDbContext context, IReviewModerationService moderationService)
     {
         _context = context;
+        _moderationService = moderationService;
     }
 
     public async Task<ProductReviewsResponse> GetByProductIdAsync(int productId, ReviewQueryParameters parameters)
@@ -81,7 +84,8 @@ public class ReviewService : IReviewService
 
         var user = await _context.Users.FirstAsync(u => u.Id == currentUserId);
 
-        var (isSuspicious, reason) = await RunRuleBasedSignalsAsync(product, user, request);
+        var (ruleFlagged, ruleReason) = await RunRuleBasedSignalsAsync(product, user, request);
+        var (finalStatus, moderationReason) = await DetermineFinalStatusAsync(ruleFlagged, ruleReason, request);
 
         var review = new Review
         {
@@ -90,17 +94,44 @@ public class ReviewService : IReviewService
             Rating = request.Rating,
             Comment = request.Comment,
             CreatedAt = DateTime.UtcNow,
-            Status = isSuspicious ? ReviewStatus.Flagged : ReviewStatus.Pending,
-            ModerationReason = reason,
-            ModeratedAt = isSuspicious ? DateTime.UtcNow : null
+            Status = finalStatus,
+            ModerationReason = moderationReason,
+            ModeratedAt = finalStatus == ReviewStatus.Pending ? null : DateTime.UtcNow
         };
 
         _context.Reviews.Add(review);
         await _context.SaveChangesAsync();
 
-        Log.Information("Review submitted by User {UserId} for Product {ProductId} (Status={Status}, Reason={Reason})", currentUserId, request.ProductId, review.Status, reason ?? "none");
+        Log.Information("Review submitted by User {UserId} for Product {ProductId} (Status={Status}, Reason={Reason})", currentUserId, request.ProductId, review.Status, moderationReason ?? "none");
 
         return await GetReviewWithUser(review.Id);
+    }
+
+    // Combines the rule-based verdict with AI content moderation (when the rules found
+    // nothing and there is comment text to assess) into the review's final status.
+    // Gemini failures fail open to Flagged rather than blocking submission or silently
+    // publishing unmoderated content.
+    private async Task<(ReviewStatus status, string? reason)> DetermineFinalStatusAsync(
+        bool ruleFlagged, string? ruleReason, SubmitReviewRequest request)
+    {
+        if (ruleFlagged)
+            return (ReviewStatus.Flagged, ruleReason);
+
+        if (string.IsNullOrWhiteSpace(request.Comment))
+            return (ReviewStatus.Approved, null);
+
+        try
+        {
+            var verdict = await _moderationService.ModerateReviewAsync(request.Comment, request.Rating);
+            return verdict.IsSuspicious
+                ? (ReviewStatus.Flagged, $"{verdict.Category}: {verdict.Reason}")
+                : (ReviewStatus.Approved, (string?)null);
+        }
+        catch (ExternalServiceException ex)
+        {
+            Log.Warning(ex, "AI review moderation unavailable; failing open to Flagged.");
+            return (ReviewStatus.Flagged, "AI moderation unavailable; flagged for manual review.");
+        }
     }
 
     // Cheap, rule-based fraud signals. Runs before any AI call and short-circuits on the

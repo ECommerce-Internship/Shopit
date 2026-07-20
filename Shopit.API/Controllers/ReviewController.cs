@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using Shopit.Application.DTOs.Reviews;
 using Shopit.Application.Interfaces;
@@ -33,8 +34,17 @@ public class ReviewController : ControllerBase
         var result = await _reviewService.GetModerationQueueAsync(parameters);
         return Ok(result);
     }
+    [HttpGet("mine/flagged")]
+    [Authorize]
+    public async Task<IActionResult> GetMyFlaggedReviews([FromQuery] ReviewQueryParameters parameters)
+    {
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var result = await _reviewService.GetFlaggedForSellerAsync(userId, parameters);
+        return Ok(result);
+    }
     [HttpPost]
     [Authorize]
+    [EnableRateLimiting("ReviewModeration")]
     public async Task<IActionResult> Submit([FromBody] SubmitReviewRequest request)
     {
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);

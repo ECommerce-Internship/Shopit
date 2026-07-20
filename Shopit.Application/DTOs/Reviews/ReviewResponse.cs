@@ -11,6 +11,7 @@ public class ReviewResponse
     public DateTime CreatedAt { get; set; }
     public string Status { get; set; } = string.Empty;
     public string? ModerationReason { get; set; }
+    public string? ModerationCategory { get; set; }
     public DateTime? ModeratedAt { get; set; }
     public double? ModerationScore { get; set; }
 }

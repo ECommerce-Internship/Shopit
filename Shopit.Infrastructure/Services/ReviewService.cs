@@ -85,7 +85,7 @@ public class ReviewService : IReviewService
         var user = await _context.Users.FirstAsync(u => u.Id == currentUserId);
 
         var (ruleFlagged, ruleReason) = await RunRuleBasedSignalsAsync(product, user, request);
-        var (finalStatus, moderationReason, moderationScore) = await DetermineFinalStatusAsync(ruleFlagged, ruleReason, request);
+        var (finalStatus, moderationReason, moderationScore, moderationCategory) = await DetermineFinalStatusAsync(ruleFlagged, ruleReason, request);
 
         var review = new Review
         {
@@ -97,6 +97,7 @@ public class ReviewService : IReviewService
             Status = finalStatus,
             ModerationReason = moderationReason,
             ModerationScore = moderationScore,
+            ModerationCategory = moderationCategory,
             ModeratedAt = finalStatus == ReviewStatus.Pending ? null : DateTime.UtcNow
         };
 
@@ -113,26 +114,28 @@ public class ReviewService : IReviewService
     // Gemini failures fail open to Flagged rather than blocking submission or silently
     // publishing unmoderated content. ModerationScore reflects rule certainty (1.0) or
     // the AI's confidence in its verdict, so admins can gauge how sure the pipeline was.
-    private async Task<(ReviewStatus status, string? reason, double? score)> DetermineFinalStatusAsync(
+    // ModerationCategory is the AI's structured category (or null for rule-based flags
+    // and for auto-approved content with no comment/no signal).
+    private async Task<(ReviewStatus status, string? reason, double? score, string? category)> DetermineFinalStatusAsync(
         bool ruleFlagged, string? ruleReason, SubmitReviewRequest request)
     {
         if (ruleFlagged)
-            return (ReviewStatus.Flagged, ruleReason, 1.0);
+            return (ReviewStatus.Flagged, ruleReason, 1.0, null);
 
         if (string.IsNullOrWhiteSpace(request.Comment))
-            return (ReviewStatus.Approved, null, null);
+            return (ReviewStatus.Approved, null, null, null);
 
         try
         {
             var verdict = await _moderationService.ModerateReviewAsync(request.Comment, request.Rating);
             return verdict.IsSuspicious
-                ? (ReviewStatus.Flagged, $"{verdict.Category}: {verdict.Reason}", verdict.Confidence)
-                : (ReviewStatus.Approved, (string?)null, verdict.Confidence);
+                ? (ReviewStatus.Flagged, $"{verdict.Category}: {verdict.Reason}", verdict.Confidence, verdict.Category)
+                : (ReviewStatus.Approved, (string?)null, verdict.Confidence, verdict.Category);
         }
         catch (ExternalServiceException ex)
         {
             Log.Warning(ex, "AI review moderation unavailable; failing open to Flagged.");
-            return (ReviewStatus.Flagged, "AI moderation unavailable; flagged for manual review.", null);
+            return (ReviewStatus.Flagged, "AI moderation unavailable; flagged for manual review.", null, null);
         }
     }
 
@@ -197,10 +200,34 @@ public class ReviewService : IReviewService
         return (false, null);
     }
 
+    // Applies the optional Status/StoreId/Category filters shared by GetAllReviewsAsync,
+    // GetModerationQueueAsync, and GetFlaggedForSellerAsync.
+    private static IQueryable<Review> ApplyFilters(IQueryable<Review> query, ReviewQueryParameters parameters)
+    {
+        if (!string.IsNullOrWhiteSpace(parameters.Status) &&
+            Enum.TryParse<ReviewStatus>(parameters.Status, true, out var statusFilter))
+        {
+            query = query.Where(r => r.Status == statusFilter);
+        }
+
+        if (parameters.StoreId.HasValue)
+        {
+            query = query.Where(r => r.Product.StoreId == parameters.StoreId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(parameters.Category))
+        {
+            query = query.Where(r => r.ModerationCategory == parameters.Category);
+        }
+
+        return query;
+    }
+
     public async Task<ProductReviewsResponse> GetAllReviewsAsync(ReviewQueryParameters parameters)
     {
-        var query = _context.Reviews
-            .Include(r => r.User)
+        var query = ApplyFilters(
+            _context.Reviews.Include(r => r.User).Include(r => r.Product),
+            parameters)
             .OrderByDescending(r => r.CreatedAt)
             .AsQueryable();
 
@@ -224,9 +251,9 @@ public class ReviewService : IReviewService
         var pageSize = parameters.PageSize <= 0 ? 10 : parameters.PageSize;
         if (pageSize > 100) pageSize = 100;
 
-        var query = _context.Reviews
-            .Include(r => r.User)
-            .Where(r => r.Status == ReviewStatus.Flagged)
+        var query = ApplyFilters(
+            _context.Reviews.Include(r => r.User).Include(r => r.Product).Where(r => r.Status == ReviewStatus.Flagged),
+            parameters)
             .OrderByDescending(r => r.CreatedAt)
             .AsQueryable();
 
@@ -250,11 +277,13 @@ public class ReviewService : IReviewService
         var pageSize = parameters.PageSize <= 0 ? 10 : parameters.PageSize;
         if (pageSize > 100) pageSize = 100;
 
-        var query = _context.Reviews
-            .Include(r => r.User)
-            .Include(r => r.Product)
-            .Where(r => r.Product.Store.OwnerUserId == sellerUserId &&
-                        (r.Status == ReviewStatus.Flagged || r.Status == ReviewStatus.Rejected))
+        var query = ApplyFilters(
+            _context.Reviews
+                .Include(r => r.User)
+                .Include(r => r.Product)
+                .Where(r => r.Product.Store.OwnerUserId == sellerUserId &&
+                            (r.Status == ReviewStatus.Flagged || r.Status == ReviewStatus.Rejected)),
+            parameters)
             .OrderByDescending(r => r.CreatedAt)
             .AsQueryable();
 
@@ -388,6 +417,7 @@ public class ReviewService : IReviewService
         CreatedAt = review.CreatedAt,
         Status = review.Status.ToString(),
         ModerationReason = review.ModerationReason,
+        ModerationCategory = review.ModerationCategory,
         ModeratedAt = review.ModeratedAt,
         ModerationScore = review.ModerationScore
     };

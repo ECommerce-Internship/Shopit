@@ -12,6 +12,7 @@ public class Review
     public Product Product { get; set; } = null!;
     public ReviewStatus Status { get; set; } = ReviewStatus.Pending;
     public string? ModerationReason { get; set; }
+    public string? ModerationCategory { get; set; }
     public DateTime? ModeratedAt { get; set; }
     public double? ModerationScore { get; set; }
 }

@@ -409,4 +409,32 @@ public class ReviewServiceTests
         stored.Status.Should().Be(ReviewStatus.Flagged);
         stored.ModerationReason.Should().Contain("unavailable");
     }
+
+    [Fact]
+    public async Task GetModerationQueueAsync_FilterByStoreId_OnlyReturnsThatStoresReviews()
+    {
+        var db = CreateDb();
+        var (buyer, product, store) = await SeedAsync(db);
+
+        var otherSeller = new User { FirstName = "Other", LastName = "Seller", Email = "otherseller@s.com", PasswordHash = "h", Role = UserRole.Seller };
+        db.Users.Add(otherSeller);
+        await db.SaveChangesAsync();
+        var otherStore = new Store { Name = "Other Store", Slug = "other-store", Status = StoreStatus.Approved, OwnerUserId = otherSeller.Id };
+        db.Stores.Add(otherStore);
+        await db.SaveChangesAsync();
+        var otherProduct = new Product { Name = "Other Widget", SKU = "OW-1", Price = 10m, CategoryId = product.CategoryId, StoreId = otherStore.Id, Inventory = new Inventory { Quantity = 5, LowStockThreshold = 1 } };
+        db.Products.Add(otherProduct);
+        await db.SaveChangesAsync();
+
+        await CreateReviewAsync(db, product, buyer, ReviewStatus.Flagged, comment: "From store one");
+        db.Reviews.Add(new Review { ProductId = otherProduct.Id, UserId = buyer.Id, Rating = 3, Comment = "From store two", CreatedAt = DateTime.UtcNow, Status = ReviewStatus.Flagged });
+        await db.SaveChangesAsync();
+
+        var service = new ReviewService(db, CreateGenuineModerationService());
+
+        var result = await service.GetModerationQueueAsync(new ReviewQueryParameters { StoreId = store.Id });
+
+        result.TotalCount.Should().Be(1);
+        result.Reviews.Should().ContainSingle(r => r.Comment == "From store one");
+    }
 }

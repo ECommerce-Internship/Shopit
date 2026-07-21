@@ -84,6 +84,10 @@ services:
       ConnectionStrings__Redis: "redis:6379"
       ConnectionStrings__AzureQueue: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;QueueEndpoint=http://azurite:10001/devstoreaccount1;"
       AzureQueue__QueueName: "low-stock-alerts"
+      # SCRUM-166: the answer_feature_question RAG tool runs in this process and
+      # needs Gemini for query embedding + grounded generation. Set GEMINI_API_KEY
+      # in the local .env (same key the api service uses).
+      Gemini__ApiKey: ${GEMINI_API_KEY:-}
     ports:
       - "6001:8080"
     healthcheck:

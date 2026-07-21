@@ -12,6 +12,7 @@ using FluentValidation;
 using Shopit.Application.Products.DTOs;
 using Shopit.Application.AI;
 using Pgvector.EntityFrameworkCore;
+using Shopit.Application.Rag;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -45,6 +46,21 @@ builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IGeminiService, GeminiService>();
+builder.Services.AddScoped<IReviewModerationService, ReviewModerationService>();
+
+// SCRUM-166: named HttpClient for Gemini, mirroring the API host. The RAG tool
+// (answer_feature_question) runs in this process and needs Gemini for both
+// query embedding and grounded generation, so this host must wire it up too.
+builder.Services.AddHttpClient(GeminiService.HttpClientName, client =>
+{
+    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
+});
+
+// SCRUM-166: feature-doc RAG. Ingestion runs in the API host; here we only need
+// retrieval + grounded generation to answer questions.
+builder.Services.AddScoped<Shopit.Application.Rag.IEmbeddingService, GeminiEmbeddingService>();
+builder.Services.AddScoped<IVectorStore, InMemoryVectorStore>();
+builder.Services.AddScoped<IFeatureQaService, FeatureQaService>();
 
 // SCRUM-153: HTTP (streamable) transport, replacing stdio. The server now
 // runs as an independent ASP.NET Core process/container, reachable by the

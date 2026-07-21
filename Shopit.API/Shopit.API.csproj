@@ -32,4 +32,9 @@
     <ProjectReference Include="..\Shopit.Application\Shopit.Application.csproj" />
     <ProjectReference Include="..\Shopit.Infrastructure\Shopit.Infrastructure.csproj" />
   </ItemGroup>
+  <!-- SCRUM-166: ship the feature docs alongside the app so RAG ingestion can read
+       them at runtime (resolved via FeatureQa:DocsPath = docs/features). -->
+  <ItemGroup>
+    <Content Include="..\docs\features\**\*.md" LinkBase="docs\features" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

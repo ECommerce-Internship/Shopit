@@ -24,6 +24,7 @@ public class AppDbContext : DbContext
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Review> Reviews => Set<Review>();
     public DbSet<UserExternalLogin> UserExternalLogins => Set<UserExternalLogin>();
+    public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -213,5 +214,11 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<Order>()
             .Property(o => o.DiscountAmount).HasPrecision(10, 2);
+
+        // SCRUM-166: feature-doc chunks for RAG. ContentHash is looked up on every
+        // re-ingestion to skip re-embedding unchanged chunks, so it's indexed.
+        // Embedding (float[]) maps to a Postgres real[] column automatically via Npgsql.
+        modelBuilder.Entity<DocumentChunk>()
+            .HasIndex(c => c.ContentHash);
     }
 }

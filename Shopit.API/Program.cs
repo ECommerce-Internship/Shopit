@@ -19,6 +19,7 @@ using Shopit.Application.AI;
 using Shopit.Application.Chat;
 using Shopit.Application.Interfaces;
 using Shopit.Application.Products;
+using Shopit.Application.Rag;
 using Shopit.Application.Validators;
 using Shopit.Infrastructure.Configuration;
 using Shopit.Infrastructure.Data;
@@ -186,6 +187,14 @@ builder.Services.AddRateLimiter(options =>
         limiterOptions.PermitLimit = 5;
     });
 
+    // Named policy required by [EnableRateLimiting("ReviewModeration")] on the review
+    // submission endpoint, since each submission may trigger a Gemini call.
+    options.AddFixedWindowLimiter("ReviewModeration", limiterOptions =>
+    {
+        limiterOptions.Window = TimeSpan.FromMinutes(1);
+        limiterOptions.PermitLimit = 5;
+    });
+
     // Named policy required by [EnableRateLimiting("Chat")] on ChatController.
     // Per-user (JWT NameIdentifier claim) sliding window, since the chat endpoint
     // calls Gemini on every request and may trigger multiple tool calls per turn -
@@ -199,16 +208,28 @@ builder.Services.AddRateLimiter(options =>
                 SegmentsPerWindow = 4,
                 PermitLimit = 20
             }));
+
+    // Named policy required by [EnableRateLimiting("PasswordReset")] on the anonymous
+    // forgot-password endpoint. Per-IP fixed window to curb abuse/email bombing (SCRUM-165).
+    options.AddPolicy("PasswordReset", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromMinutes(15),
+                PermitLimit = 5
+            }));
 });
 
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
 builder.Services.AddScoped<IStoreService, StoreService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<ILowStockAlertService, LowStockAlertService>();
 builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
-builder.Services.AddScoped<IEmailService, SendGridEmailService>();
+builder.Services.AddScoped<IEmailService, BrevoEmailService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
@@ -218,8 +239,16 @@ builder.Services.AddScoped<ICacheService, CacheService>();
 builder.Services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
 builder.Services.AddScoped<IExternalAuthService, ExternalAuthService>();
 builder.Services.AddScoped<IGeminiService, GeminiService>();
+builder.Services.AddScoped<IReviewModerationService, ReviewModerationService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IConversationStore, RedisConversationStore>();
+
+// SCRUM-166: feature-doc RAG. This host owns ingestion (admin endpoint + Dev
+// startup); the MCP host owns answering. Both share the same database.
+builder.Services.AddSingleton<MarkdownFeatureChunker>();
+builder.Services.AddScoped<IEmbeddingService, GeminiEmbeddingService>();
+builder.Services.AddScoped<IVectorStore, InMemoryVectorStore>();
+builder.Services.AddScoped<IFeatureDocIngestionService, FeatureDocIngestionService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
@@ -257,6 +286,22 @@ if (app.Environment.IsDevelopment())
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         context.Database.Migrate();
         DbInitializer.Seed(context);
+
+        // SCRUM-166: ingest the feature docs on startup so the chat assistant can
+        // answer feature questions in a fresh Dev environment. Gated by config and
+        // best-effort — a Gemini/config problem must not stop the app from booting.
+        if (app.Configuration.GetValue<bool?>("FeatureQa:ReindexOnStartup") ?? true)
+        {
+            try
+            {
+                var ingestion = scope.ServiceProvider.GetRequiredService<IFeatureDocIngestionService>();
+                ingestion.ReindexAsync().GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                app.Logger.LogError(ex, "Feature-doc ingestion on startup failed; continuing without it.");
+            }
+        }
     }
 
     app.UseSwagger();

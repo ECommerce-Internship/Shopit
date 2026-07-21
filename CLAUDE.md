@@ -13,7 +13,7 @@ Architecture**. The solution (`Shopit.slnx`) contains six projects:
 |---|---|---|
 | `Shopit.Domain` | classlib | Entities, enums, domain exceptions. **Zero dependencies.** |
 | `Shopit.Application` | classlib | Service interfaces, DTOs, validators, business contracts. |
-| `Shopit.Infrastructure` | classlib | EF Core, repositories, service implementations, EF migrations, external integrations (SQL Server, Redis, Azure Blob/Queue, SendGrid, SFTP). |
+| `Shopit.Infrastructure` | classlib | EF Core, repositories, service implementations, EF migrations, external integrations (SQL Server, Redis, Azure Blob/Queue, Brevo, SFTP). |
 | `Shopit.API` | ASP.NET Core Web API | HTTP host — controllers, middleware, DI composition root, auth. |
 | `Shopit.MCP` | console (Exe) | A **second host** exposing selected services as Model Context Protocol tools. |
 | `Shopit.Tests` | xUnit | Unit/integration tests for Application + Infrastructure services. |
@@ -49,7 +49,7 @@ dotnet run --project Shopit.MCP
 
 ### Configuration & secrets
 - `appsettings.json` is committed and must contain **no real secrets** (Google,
-  SendGrid, SFTP, etc. are blank placeholders).
+  Brevo, SFTP, etc. are blank placeholders).
 - Put local secrets in **user secrets** (`Shopit.API` has a `UserSecretsId`) or in
   `appsettings.Development.json` (gitignored). Example:
   ```powershell

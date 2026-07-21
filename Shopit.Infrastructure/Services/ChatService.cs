@@ -75,6 +75,10 @@ public class ChatService : IChatService
         "add_to_cart",
         "view_cart",
         "get_my_orders",
+        // SCRUM-166: feature Q&A is available to every authenticated user (the docs
+        // cover both customer- and seller-facing features). It takes no userId, so it
+        // is intentionally absent from IdentityInjectedTools / HiddenParametersByTool.
+        "answer_feature_question",
     };
 
     /// <summary>

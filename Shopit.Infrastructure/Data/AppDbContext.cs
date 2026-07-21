@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
 
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Product> Products => Set<Product>();
     public DbSet<Inventory> Inventories => Set<Inventory>();
@@ -23,6 +24,7 @@ public class AppDbContext : DbContext
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Review> Reviews => Set<Review>();
     public DbSet<UserExternalLogin> UserExternalLogins => Set<UserExternalLogin>();
+    public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -51,6 +53,12 @@ public class AppDbContext : DbContext
             .HasOne(rt => rt.User)
             .WithMany(u => u.RefreshTokens)
             .HasForeignKey(rt => rt.UserId);
+
+        // User -> PasswordResetTokens (one-to-many)
+        modelBuilder.Entity<PasswordResetToken>()
+            .HasOne(t => t.User)
+            .WithMany(u => u.PasswordResetTokens)
+            .HasForeignKey(t => t.UserId);
 
         // User -> ExternalLogins (one-to-many)
         modelBuilder.Entity<UserExternalLogin>()
@@ -206,5 +214,11 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<Order>()
             .Property(o => o.DiscountAmount).HasPrecision(10, 2);
+
+        // SCRUM-166: feature-doc chunks for RAG. ContentHash is looked up on every
+        // re-ingestion to skip re-embedding unchanged chunks, so it's indexed.
+        // Embedding (float[]) maps to a Postgres real[] column automatically via Npgsql.
+        modelBuilder.Entity<DocumentChunk>()
+            .HasIndex(c => c.ContentHash);
     }
 }

@@ -14,8 +14,27 @@ public class ChatServiceTests
         "get_low_stock_products",
         "get_order",
         "get_customer_orders",
-        "get_product"
+        "get_product",
+        "answer_feature_question"
     };
+
+    [Fact]
+    public void GetAllowedToolNames_CustomerRole_IncludesAnswerFeatureQuestion()
+    {
+        // SCRUM-166: feature Q&A must be usable by any authenticated role, not
+        // just Admin, so it belongs to the customer allow-list.
+        var allowed = ChatService.GetAllowedToolNames("Customer", AllToolNames);
+
+        allowed.Should().Contain("answer_feature_question");
+    }
+
+    [Fact]
+    public void GetAllowedToolNames_AdminRole_IncludesAnswerFeatureQuestion()
+    {
+        var allowed = ChatService.GetAllowedToolNames("Admin", AllToolNames);
+
+        allowed.Should().Contain("answer_feature_question");
+    }
 
     [Fact]
     public void GetAllowedToolNames_AdminRole_ReturnsAllTools()

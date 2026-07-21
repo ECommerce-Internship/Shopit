@@ -1,4 +1,4 @@
-using Asp.Versioning;
+﻿using Asp.Versioning;
 using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
 using FluentValidation;
@@ -81,7 +81,7 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "Bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Paste ONLY your JWT access token (the eyJ... value). Do NOT type 'Bearer' — Swagger adds it automatically."
+        Description = "Paste ONLY your JWT access token (the eyJ... value). Do NOT type 'Bearer' â€” Swagger adds it automatically."
     });
 
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -185,6 +185,14 @@ builder.Services.AddRateLimiter(options =>
         limiterOptions.PermitLimit = 5;
     });
 
+    // Named policy required by [EnableRateLimiting("ReviewModeration")] on the review
+    // submission endpoint, since each submission may trigger a Gemini call.
+    options.AddFixedWindowLimiter("ReviewModeration", limiterOptions =>
+    {
+        limiterOptions.Window = TimeSpan.FromMinutes(1);
+        limiterOptions.PermitLimit = 5;
+    });
+
     // Named policy required by [EnableRateLimiting("Chat")] on ChatController.
     // Per-user (JWT NameIdentifier claim) sliding window, since the chat endpoint
     // calls Gemini on every request and may trigger multiple tool calls per turn -
@@ -229,6 +237,7 @@ builder.Services.AddScoped<ICacheService, CacheService>();
 builder.Services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
 builder.Services.AddScoped<IExternalAuthService, ExternalAuthService>();
 builder.Services.AddScoped<IGeminiService, GeminiService>();
+builder.Services.AddScoped<IReviewModerationService, ReviewModerationService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IConversationStore, RedisConversationStore>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();

@@ -142,4 +142,12 @@ public class StoresController : ControllerBase
         var result = await _storeService.SuspendStoreAsync(id);
         return Ok(result);
     }
+    [HttpGet]
+    [Route("api/v{version:apiVersion}/admin/stores")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> GetAllStores([FromQuery] string? status)
+    {
+        var result = await _storeService.GetAllStoresAsync(status);
+        return Ok(result);
+    }
 }

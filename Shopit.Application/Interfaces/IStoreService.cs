@@ -24,4 +24,6 @@ public interface IStoreService
 
     /// <summary>Suspends an approved store (Approved -> Suspended).</summary>
     Task<StoreResponse> SuspendStoreAsync(int storeId);
+    /// <summary>Lists all stores, optionally filtered by status (admin).</summary>
+    Task<IReadOnlyList<StoreResponse>> GetAllStoresAsync(string? status = null);
 }

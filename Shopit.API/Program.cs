@@ -135,7 +135,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"),
+        o => o.UseVector()));
     
 // Azure Queue for low stock alerts
 var storageConnectionString = builder.Configuration["Azure:StorageConnectionString"]!;
@@ -246,11 +247,12 @@ builder.Services.AddScoped<IConversationStore, RedisConversationStore>();
 // SCRUM-166: feature-doc RAG. This host owns ingestion (admin endpoint + Dev
 // startup); the MCP host owns answering. Both share the same database.
 builder.Services.AddSingleton<MarkdownFeatureChunker>();
-builder.Services.AddScoped<IEmbeddingService, GeminiEmbeddingService>();
+builder.Services.AddScoped<Shopit.Application.Rag.IEmbeddingService, GeminiEmbeddingService>();
 builder.Services.AddScoped<IVectorStore, InMemoryVectorStore>();
 builder.Services.AddScoped<IFeatureDocIngestionService, FeatureDocIngestionService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
+builder.Services.AddScoped<Shopit.Application.AI.IEmbeddingService, EmbeddingService>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 builder.Services.AddCors(options =>

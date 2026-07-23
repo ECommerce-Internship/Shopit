@@ -14,6 +14,8 @@ using Shopit.Domain.Exceptions;
 using Shopit.Infrastructure.Data;
 using DomainValidationException = Shopit.Domain.Exceptions.ValidationException;
 using Serilog;
+using Pgvector.EntityFrameworkCore;
+using Pgvector;
 
 namespace Shopit.Infrastructure.Services;
 
@@ -24,6 +26,7 @@ public class ProductService : IProductService
     private readonly IValidator<UpdateProductRequest> _updateValidator;
     private readonly ICacheService _cache;
     private readonly IGeminiService _geminiService;
+    private readonly IEmbeddingService _embeddingService;
 
     // Until seller-owned product management exists, products are created/imported into the
     // default platform store. SKU uniqueness is scoped per store (composite (StoreId, SKU) index).
@@ -34,13 +37,15 @@ public class ProductService : IProductService
         IValidator<CreateProductRequest> createValidator,
         IValidator<UpdateProductRequest> updateValidator,
         ICacheService cache,
-        IGeminiService geminiService)
+        IGeminiService geminiService,
+        IEmbeddingService embeddingService)
     {
         _context = context;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
         _cache = cache;
         _geminiService = geminiService;
+        _embeddingService = embeddingService;
     }
 
     private async Task<int> GetDefaultStoreIdAsync(CancellationToken cancellationToken = default)
@@ -377,6 +382,21 @@ public class ProductService : IProductService
         _context.Products.Add(product);
         await _context.SaveChangesAsync();
         await _cache.RemoveByPatternAsync("products:*");
+        
+    {
+        try
+        {
+            var text = $"{product.Name}. {product.Description ?? string.Empty}. Category: {(await _context.Categories.FindAsync(product.CategoryId))?.Name ?? string.Empty}.";
+            var embedding = await _embeddingService.GenerateEmbeddingAsync(text);
+            product.Embedding = embedding;
+            await _context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Could not generate embedding for new product {ProductId}", product.Id);
+        }
+        };
+
         return await GetByIdAsync(product.Id);
     }
 
@@ -438,8 +458,23 @@ public class ProductService : IProductService
         await _context.SaveChangesAsync();
         await _cache.RemoveByPatternAsync("products:*");
         await _cache.RemoveAsync($"product:{id}");
+    
+{
+        try
+        {
+            var category = await _context.Categories.FindAsync(product.CategoryId);
+            var text = $"{product.Name}. {product.Description ?? string.Empty}. Category: {category?.Name ?? string.Empty}.";
+            var embedding = await _embeddingService.GenerateEmbeddingAsync(text);
+            product.Embedding = embedding;
+            await _context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {   
+            Log.Warning(ex, "Could not regenerate embedding for product {ProductId}", product.Id);
+        }
+        };
         return await GetByIdAsync(id);
-    }
+        }
 
     public async Task DeleteAsync(int id, int userId, bool isAdmin)
     {
@@ -633,31 +668,105 @@ public class ProductService : IProductService
 
         return result;
     }
-
-    private static IQueryable<ProductResponse> ProjectToResponse(IQueryable<Product> query)
+    public async Task<IEnumerable<ProductResponse>> SemanticSearchAsync(string query, int take = 10)
+{
+    float[] queryEmbedding;
+    try
     {
-        return query.Select(p => new ProductResponse
-        {
-            Id = p.Id,
-            Name = p.Name,
-            Description = p.Description,
-            Price = p.Price,
-            Sku = p.SKU,
-            ImageUrl = p.ImageUrl,
-            SeoTitle = p.SeoTitle,
-            MetaDescription = p.MetaDescription,
-            Features = p.Features,
-            CategoryId = p.CategoryId,
-            CategoryName = p.Category.Name,
-            StoreId = p.StoreId,
-            StoreName = p.Store.Name,
-            StoreSlug = p.Store.Slug,
-            StockQuantity = p.Inventory == null ? 0 : p.Inventory.Quantity,
-            AverageRating = p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
-            ReviewCount = p.Reviews.Count(),
-            CreatedAt = p.CreatedAt
-        });
+        queryEmbedding = await _embeddingService.GenerateEmbeddingAsync(query);
     }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Semantic search embedding failed, returning empty results");
+        return Enumerable.Empty<ProductResponse>();
+    }
+
+    var vector = new Pgvector.Vector(queryEmbedding);
+
+    var products = await _context.Products
+        .Include(p => p.Category)
+        .Include(p => p.Store)
+        .Include(p => p.Inventory)
+        .Include(p => p.Reviews)
+        .Where(p => !p.IsDeleted && p.Embedding != null && p.Store.Status == StoreStatus.Approved)
+        .Where(p => p.Embedding!.CosineDistance(vector) < 0.25)  // ← add this threshold
+        .OrderBy(p => p.Embedding!.CosineDistance(vector))
+        .Take(take)
+        .ToListAsync();
+
+    return products.Select(p => new ProductResponse
+    {
+        Id = p.Id,
+        Name = p.Name,
+        Description = p.Description,
+        Price = p.Price,
+        Sku = p.SKU,
+        ImageUrl = p.ImageUrl,
+        SeoTitle = p.SeoTitle,
+        MetaDescription = p.MetaDescription,
+        Features = p.Features,
+        CategoryId = p.CategoryId,
+        CategoryName = p.Category.Name,
+        StoreId = p.StoreId,
+        StoreName = p.Store.Name,
+        StoreSlug = p.Store.Slug,
+        StockQuantity = p.Inventory == null ? 0 : p.Inventory.Quantity,
+        AverageRating = p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
+        ReviewCount = p.Reviews.Count(),
+        CreatedAt = p.CreatedAt
+    });
+}
+
+public async Task<int> BackfillEmbeddingsAsync(CancellationToken ct = default)
+{
+    var products = await _context.Products
+        .Include(p => p.Category)
+        .Include(p => p.Store)
+        .Where(p => !p.IsDeleted && p.Embedding == null)
+        .ToListAsync(ct);
+
+    int count = 0;
+    foreach (var product in products)
+    {
+        try
+        {
+            var text = $"{product.Name}. {product.Description ?? string.Empty}. Category: {product.Category?.Name ?? string.Empty}.";
+            var embedding = await _embeddingService.GenerateEmbeddingAsync(text, ct);
+            product.Embedding = embedding;
+            count++;
+            await Task.Delay(200, ct);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Backfill skipped product {ProductId}", product.Id);
+        }
+    }
+
+    await _context.SaveChangesAsync(ct);
+    return count;
+}
+
+   private static IQueryable<ProductResponse> ProjectToResponse(IQueryable<Product> query)
+{
+    return query.Select(p => new ProductResponse
+    {
+        Id = p.Id,
+        Name = p.Name,
+        Description = p.Description,
+        Price = p.Price,
+        Sku = p.SKU,
+        ImageUrl = p.ImageUrl,
+        CategoryId = p.CategoryId,
+        CategoryName = p.Category.Name,
+        StoreId = p.StoreId,
+        StoreName = p.Store.Name,
+        StoreSlug = p.Store.Slug,
+        StockQuantity = p.Inventory == null ? 0 : p.Inventory.Quantity,
+        AverageRating = p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
+        ReviewCount = p.Reviews.Count(),
+        CreatedAt = p.CreatedAt
+    });
+}
 
     private static string CombineValidationErrors(FluentValidation.Results.ValidationResult validationResult)
     {

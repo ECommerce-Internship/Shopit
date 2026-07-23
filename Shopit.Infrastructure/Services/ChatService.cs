@@ -191,6 +191,7 @@ public class ChatService : IChatService
             var candidatePart = ExtractFirstPart(responseJson);
 
             var functionCall = candidatePart?["functionCall"];
+            var thoughtSignature = candidatePart?["thoughtSignature"]?.GetValue<string>();
             if (functionCall is null)
             {
                 var text = candidatePart?["text"]?.GetValue<string>();
@@ -221,7 +222,7 @@ public class ChatService : IChatService
                     "Blocked call to tool {ToolName} not permitted for role {Role}.",
                     functionName, role);
 
-                contents.Add(BuildModelFunctionCallContent(functionName, argsNode));
+                contents.Add(BuildModelFunctionCallContent(functionName, argsNode, thoughtSignature));
                 contents.Add(BuildFunctionResponseContent(functionName, "Tool call denied: not permitted for this user's role."));
                 continue;
             }
@@ -252,7 +253,7 @@ public class ChatService : IChatService
             }
 
             // Append the model's function call turn, then our function response turn.
-            contents.Add(BuildModelFunctionCallContent(functionName, argsObject));
+            contents.Add(BuildModelFunctionCallContent(functionName, argsObject, thoughtSignature));
             contents.Add(BuildFunctionResponseContent(functionName, toolResultText));
         }
 
@@ -445,21 +446,26 @@ public class ChatService : IChatService
         ["parts"] = new JsonArray { new JsonObject { ["text"] = text } }
     };
 
-    private static JsonObject BuildModelFunctionCallContent(string name, JsonObject? args) => new()
+    private static JsonObject BuildModelFunctionCallContent(string name, JsonObject? args, string? thoughtSignature = null)
     {
-        ["role"] = "model",
-        ["parts"] = new JsonArray
+        var part = new JsonObject
         {
-            new JsonObject
+            ["functionCall"] = new JsonObject
             {
-                ["functionCall"] = new JsonObject
-                {
-                    ["name"] = name,
-                    ["args"] = args?.DeepClone() ?? new JsonObject()
-                }
+                ["name"] = name,
+                ["args"] = args?.DeepClone() ?? new JsonObject()
             }
+        };
+        if (!string.IsNullOrEmpty(thoughtSignature))
+        {
+            part["thoughtSignature"] = thoughtSignature;
         }
-    };
+        return new JsonObject
+        {
+            ["role"] = "model",
+            ["parts"] = new JsonArray { part }
+        };
+    }
 
     private static JsonObject BuildFunctionResponseContent(string name, string resultText) => new()
     {

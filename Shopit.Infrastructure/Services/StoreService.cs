@@ -145,4 +145,14 @@ public class StoreService : IStoreService
         OwnerUserId = store.OwnerUserId,
         CreatedAt = store.CreatedAt
     };
+public async Task<IReadOnlyList<StoreResponse>> GetAllStoresAsync(string? status = null)
+{
+    var query = _context.Stores.AsQueryable();
+
+    if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<StoreStatus>(status, true, out var storeStatus))
+        query = query.Where(s => s.Status == storeStatus);
+
+    var stores = await query.OrderByDescending(s => s.CreatedAt).ToListAsync();
+    return stores.Select(MapToResponse).ToList();
+}
 }

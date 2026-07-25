@@ -1,4 +1,4 @@
-using Asp.Versioning;
+﻿using Asp.Versioning;
 using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
 using FluentValidation;
@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -82,7 +83,7 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "Bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Paste ONLY your JWT access token (the eyJ... value). Do NOT type 'Bearer' — Swagger adds it automatically."
+        Description = "Paste ONLY your JWT access token (the eyJ... value). Do NOT type 'Bearer' â€” Swagger adds it automatically."
     });
 
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -134,7 +135,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"),
+        o => o.UseVector()));
     
 // Azure Queue for low stock alerts
 var storageConnectionString = builder.Configuration["Azure:StorageConnectionString"]!;
@@ -186,6 +188,14 @@ builder.Services.AddRateLimiter(options =>
         limiterOptions.PermitLimit = 5;
     });
 
+    // Named policy required by [EnableRateLimiting("ReviewModeration")] on the review
+    // submission endpoint, since each submission may trigger a Gemini call.
+    options.AddFixedWindowLimiter("ReviewModeration", limiterOptions =>
+    {
+        limiterOptions.Window = TimeSpan.FromMinutes(1);
+        limiterOptions.PermitLimit = 5;
+    });
+
     // Named policy required by [EnableRateLimiting("Chat")] on ChatController.
     // Per-user (JWT NameIdentifier claim) sliding window, since the chat endpoint
     // calls Gemini on every request and may trigger multiple tool calls per turn -
@@ -231,18 +241,20 @@ builder.Services.AddScoped<ICacheService, CacheService>();
 builder.Services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
 builder.Services.AddScoped<IExternalAuthService, ExternalAuthService>();
 builder.Services.AddScoped<IGeminiService, GeminiService>();
+builder.Services.AddScoped<IReviewModerationService, ReviewModerationService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IConversationStore, RedisConversationStore>();
 
 // SCRUM-166: feature-doc RAG. This host owns ingestion (admin endpoint + Dev
 // startup); the MCP host owns answering. Both share the same database.
 builder.Services.AddSingleton<MarkdownFeatureChunker>();
-builder.Services.AddScoped<IEmbeddingService, GeminiEmbeddingService>();
+builder.Services.AddScoped<Shopit.Application.Rag.IEmbeddingService, GeminiEmbeddingService>();
 builder.Services.AddScoped<IVectorStore, InMemoryVectorStore>();
 builder.Services.AddScoped<IFeatureDocIngestionService, FeatureDocIngestionService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IProductAnalyticsService, ProductAnalyticsService>();
+builder.Services.AddScoped<Shopit.Application.AI.IEmbeddingService, EmbeddingService>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 builder.Services.AddCors(options =>
@@ -261,8 +273,16 @@ builder.Services.AddValidatorsFromAssembly(typeof(CreateCategoryRequestValidator
 builder.Services.AddValidatorsFromAssembly(typeof(IProductService).Assembly);
 
 builder.Services.AddHostedService<LowStockWorker>();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 var app = builder.Build();
 
+app.UseForwardedHeaders();
 if (app.Environment.IsDevelopment())
 {
     using (var scope = app.Services.CreateScope())

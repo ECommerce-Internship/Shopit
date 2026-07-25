@@ -11,6 +11,7 @@ using Shopit.Application.Products;
 using FluentValidation;
 using Shopit.Application.Products.DTOs;
 using Shopit.Application.AI;
+using Pgvector.EntityFrameworkCore;
 using Shopit.Application.Rag;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,7 +20,9 @@ var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(config["ConnectionStrings:DefaultConnection"]));
+    options.UseNpgsql(config["ConnectionStrings:DefaultConnection"],
+        o => o.UseVector()));
+
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     ConnectionMultiplexer.Connect(config["ConnectionStrings:Redis"]!));
 builder.Services.AddSingleton(new QueueClient(
@@ -43,6 +46,7 @@ builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IGeminiService, GeminiService>();
+builder.Services.AddScoped<IReviewModerationService, ReviewModerationService>();
 
 // SCRUM-166: named HttpClient for Gemini, mirroring the API host. The RAG tool
 // (answer_feature_question) runs in this process and needs Gemini for both
@@ -54,7 +58,7 @@ builder.Services.AddHttpClient(GeminiService.HttpClientName, client =>
 
 // SCRUM-166: feature-doc RAG. Ingestion runs in the API host; here we only need
 // retrieval + grounded generation to answer questions.
-builder.Services.AddScoped<IEmbeddingService, GeminiEmbeddingService>();
+builder.Services.AddScoped<Shopit.Application.Rag.IEmbeddingService, GeminiEmbeddingService>();
 builder.Services.AddScoped<IVectorStore, InMemoryVectorStore>();
 builder.Services.AddScoped<IFeatureQaService, FeatureQaService>();
 

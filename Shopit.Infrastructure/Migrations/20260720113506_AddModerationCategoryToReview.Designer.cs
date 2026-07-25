@@ -3,9 +3,9 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
-using Pgvector;
 using Shopit.Infrastructure.Data;
 
 #nullable disable
@@ -13,16 +13,17 @@ using Shopit.Infrastructure.Data;
 namespace Shopit.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260720113506_AddModerationCategoryToReview")]
+    partial class AddModerationCategoryToReview
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
                 .HasAnnotation("ProductVersion", "10.0.9")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
-            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "vector");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("Shopit.Domain.Entities.Cart", b =>
@@ -155,52 +156,6 @@ namespace Shopit.Infrastructure.Migrations
                     b.HasIndex("StoreId");
 
                     b.ToTable("Coupons");
-                });
-
-            modelBuilder.Entity("Shopit.Domain.Entities.DocumentChunk", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Audience")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("ContentHash")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.PrimitiveCollection<float[]>("Embedding")
-                        .IsRequired()
-                        .HasColumnType("real[]");
-
-                    b.Property<string>("FeatureName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Section")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("SourceFile")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ContentHash");
-
-                    b.ToTable("DocumentChunks");
                 });
 
             modelBuilder.Entity("Shopit.Domain.Entities.Inventory", b =>
@@ -356,8 +311,6 @@ namespace Shopit.Infrastructure.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("text");
 
-                    b.Property<Vector>("Embedding")
-                        .HasColumnType("vector(3072)");
                     b.PrimitiveCollection<List<string>>("Features")
                         .HasColumnType("text[]");
 
@@ -396,38 +349,6 @@ namespace Shopit.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("Products");
-                });
-
-            modelBuilder.Entity("Shopit.Domain.Entities.ProductInteraction", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long?>("DurationMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("ProductId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("UserId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("ProductId", "Type");
-
-                    b.ToTable("ProductInteractions");
                 });
 
             modelBuilder.Entity("Shopit.Domain.Entities.RefreshToken", b =>
@@ -829,24 +750,6 @@ namespace Shopit.Infrastructure.Migrations
                     b.Navigation("Store");
                 });
 
-            modelBuilder.Entity("Shopit.Domain.Entities.ProductInteraction", b =>
-                {
-                    b.HasOne("Shopit.Domain.Entities.Product", "Product")
-                        .WithMany("Interactions")
-                        .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Shopit.Domain.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Product");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("Shopit.Domain.Entities.RefreshToken", b =>
                 {
                     b.HasOne("Shopit.Domain.Entities.User", "User")
@@ -966,8 +869,6 @@ namespace Shopit.Infrastructure.Migrations
             modelBuilder.Entity("Shopit.Domain.Entities.Product", b =>
                 {
                     b.Navigation("CartItems");
-
-                    b.Navigation("Interactions");
 
                     b.Navigation("Inventory");
 

@@ -242,6 +242,7 @@ builder.Services.AddScoped<IVectorStore, InMemoryVectorStore>();
 builder.Services.AddScoped<IFeatureDocIngestionService, FeatureDocIngestionService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
+builder.Services.AddScoped<IProductAnalyticsService, ProductAnalyticsService>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 builder.Services.AddCors(options =>

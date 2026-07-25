@@ -23,6 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<StoreOrderItem> StoreOrderItems => Set<StoreOrderItem>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Review> Reviews => Set<Review>();
+    public DbSet<ProductInteraction> ProductInteractions => Set<ProductInteraction>();
     public DbSet<UserExternalLogin> UserExternalLogins => Set<UserExternalLogin>();
     public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
 
@@ -214,6 +215,24 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<Order>()
             .Property(o => o.DiscountAmount).HasPrecision(10, 2);
+
+        // Product -> ProductInteractions (one-to-many, append-only interest events).
+        modelBuilder.Entity<ProductInteraction>()
+            .HasOne(pi => pi.Product)
+            .WithMany(p => p.Interactions)
+            .HasForeignKey(pi => pi.ProductId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // User -> ProductInteractions (optional: null UserId = anonymous visitor).
+        modelBuilder.Entity<ProductInteraction>()
+            .HasOne(pi => pi.User)
+            .WithMany()
+            .HasForeignKey(pi => pi.UserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // Stats queries filter by (product, type), so index that pair.
+        modelBuilder.Entity<ProductInteraction>()
+            .HasIndex(pi => new { pi.ProductId, pi.Type });
 
         // SCRUM-166: feature-doc chunks for RAG. ContentHash is looked up on every
         // re-ingestion to skip re-embedding unchanged chunks, so it's indexed.

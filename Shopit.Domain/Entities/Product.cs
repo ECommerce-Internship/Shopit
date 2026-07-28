@@ -21,7 +21,6 @@ public class Product
     public ICollection<StoreOrderItem> StoreOrderItems { get; set; } = new List<StoreOrderItem>();
     public ICollection<Review> Reviews { get; set; } = new List<Review>();
     public ICollection<ProductInteraction> Interactions { get; set; } = new List<ProductInteraction>();
-}
 
     public float[]? Embedding { get; set; }
 }

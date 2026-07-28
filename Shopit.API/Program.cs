@@ -31,6 +31,8 @@ using System.Reflection;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
+using Amazon.S3;
+using Amazon.Runtime;
 
 ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
 
@@ -148,9 +150,23 @@ var redisConnection = builder.Configuration.GetConnectionString("Redis")!;
 builder.Services.AddSingleton<IConnectionMultiplexer>(
     ConnectionMultiplexer.Connect(redisConnection + ",abortConnect=false"));
 
-// Azure Blob Storage
-var blobConnection = builder.Configuration.GetConnectionString("AzureBlobStorage")!;
-builder.Services.AddSingleton(new BlobServiceClient(blobConnection));
+// R2BlobStorage
+var r2AccountId = builder.Configuration["R2:AccountId"]!;
+var r2AccessKey = builder.Configuration["R2:AccessKeyId"]!;
+var r2Secret = builder.Configuration["R2:SecretAccessKey"]!;
+var r2Bucket = builder.Configuration["R2:BucketName"]!;
+var r2PublicUrl = builder.Configuration["R2:PublicUrl"]!;
+
+var r2Client = new AmazonS3Client(
+    new BasicAWSCredentials(r2AccessKey, r2Secret),
+    new AmazonS3Config
+    {
+        ServiceURL = $"https://{r2AccountId}.r2.cloudflarestorage.com",
+        ForcePathStyle = true
+    });
+builder.Services.AddSingleton<IAmazonS3>(r2Client);
+builder.Services.AddScoped<IBlobStorageService>(_ =>
+    new R2BlobStorageService(r2Client, r2Bucket, r2PublicUrl));
 
 builder.Services.AddHttpClient();
 
@@ -238,7 +254,6 @@ builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ISftpProductImportService, SftpProductImportService>();
 builder.Services.AddScoped<ICacheService, CacheService>();
-builder.Services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
 builder.Services.AddScoped<IExternalAuthService, ExternalAuthService>();
 builder.Services.AddScoped<IGeminiService, GeminiService>();
 builder.Services.AddScoped<IReviewModerationService, ReviewModerationService>();

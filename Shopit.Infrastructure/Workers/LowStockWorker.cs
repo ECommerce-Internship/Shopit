@@ -26,7 +26,15 @@ public class LowStockWorker : BackgroundService
     {
         Console.WriteLine("=== LowStockWorker STARTED ===");
 
-        await _queueClient.CreateIfNotExistsAsync();
+        try
+        {
+            await _queueClient.CreateIfNotExistsAsync();
+        }
+        catch (Exception ex)
+    {
+        Log.Warning(ex, "Azure Queue unavailable — low stock alerts disabled.");
+        return;
+    }
 
         while (!stoppingToken.IsCancellationRequested)
         {

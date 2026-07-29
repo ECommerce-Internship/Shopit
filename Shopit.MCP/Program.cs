@@ -61,6 +61,7 @@ builder.Services.AddHttpClient(GeminiService.HttpClientName, client =>
 builder.Services.AddScoped<Shopit.Application.Rag.IEmbeddingService, GeminiEmbeddingService>();
 builder.Services.AddScoped<IVectorStore, InMemoryVectorStore>();
 builder.Services.AddScoped<IFeatureQaService, FeatureQaService>();
+builder.Services.AddScoped<Shopit.Application.AI.IEmbeddingService, Shopit.Infrastructure.Services.EmbeddingService>();
 
 // SCRUM-153: HTTP (streamable) transport, replacing stdio. The server now
 // runs as an independent ASP.NET Core process/container, reachable by the

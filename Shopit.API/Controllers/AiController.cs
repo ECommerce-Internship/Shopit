@@ -12,7 +12,7 @@ namespace Shopit.API.Controllers;
 /// </summary>
 [ApiController]
 [ApiVersion("1.0")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin, Seller")]
 [Route("api/v{version:apiVersion}/[controller]")]
 public class AiController : ControllerBase
 {

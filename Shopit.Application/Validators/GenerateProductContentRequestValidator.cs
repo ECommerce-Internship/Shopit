@@ -16,7 +16,6 @@ public class GenerateProductContentRequestValidator : AbstractValidator<Generate
             .MaximumLength(100).WithMessage("Category must not exceed 100 characters.");
 
         RuleFor(x => x.Specs)
-            .NotEmpty().WithMessage("Specifications are required.")
             .MaximumLength(2000).WithMessage("Specifications must not exceed 2000 characters.");
     }
 }

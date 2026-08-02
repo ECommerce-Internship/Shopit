@@ -63,6 +63,25 @@ services:
     profiles:
       - dev
 
+  # Self-hosted CLIP image-embedding sidecar backing visual product search
+  # (POST /api/v{version}/image-search): no API key, no per-call cost, no
+  # external rate limits. The api service reaches it over the internal Docker
+  # network at http://clip:8000. Model weights are baked into the image, so the
+  # first request is served immediately once /health passes.
+  clip:
+    build:
+      context: ./clip-service
+      dockerfile: Dockerfile
+    container_name: clip
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   # SCRUM-153: MCP server, productionized from a stdio child process spawned
   # per-request into its own independent service, reachable by the api
   # service over the internal Docker network at http://shopit-mcp:8080.
@@ -112,8 +131,14 @@ services:
         condition: service_healthy
       shopit-mcp:
         condition: service_healthy
+      clip:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      # Local stack uses the keyless CLIP sidecar; deployed (Render) overrides
+      # this to "Jina" and supplies Jina__ApiKey.
+      ImageEmbedding__Provider: "Clip"
+      ClipEmbedding__BaseUrl: "http://clip:8000"
       ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=ShopitDb;Username=postgres;Password=postgres"
       ConnectionStrings__Redis: "redis:6379"
       ConnectionStrings__AzureBlobStorage: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
@@ -127,6 +152,10 @@ services:
       # ChatService's existing "Gemini API key is not configured." error
       # rather than silently misbehaving.
       Gemini__ApiKey: ${GEMINI_API_KEY:-}
+      # Hugging Face token for visual product search image embeddings. Set
+      # HF_API_KEY in the local .env (gitignored). Only consumed when the app is
+      # registered to use HuggingFaceImageEmbeddingService.
+      HuggingFace__ApiKey: ${HF_API_KEY:-}
     ports:
       - "5129:8080"
 

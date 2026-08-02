@@ -160,6 +160,31 @@ builder.Services.AddHttpClient(GeminiService.HttpClientName, client =>
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
 });
 
+// Named HttpClient for the self-hosted CLIP embedding sidecar — visual product
+// search. BaseAddress is the sidecar's base URL (http://clip:8000 in Docker);
+// the service POSTs raw image bytes to the relative "embed" path.
+builder.Services.AddHttpClient(ClipImageEmbeddingService.HttpClientName, client =>
+{
+    var baseUrl = builder.Configuration["ClipEmbedding:BaseUrl"];
+    client.BaseAddress = new Uri(string.IsNullOrWhiteSpace(baseUrl)
+        ? "http://localhost:8000/"
+        : baseUrl.EndsWith('/') ? baseUrl : baseUrl + "/");
+    // CLIP inference on CPU can take a couple of seconds; give it headroom.
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+// Named HttpClient for the Jina AI Embeddings API — the hosted, key-based image
+// embedding provider used when deployed (Render/Vercel), where a single outbound
+// HTTPS call is cheaper than hosting a CLIP model. Base URL is overridable.
+builder.Services.AddHttpClient(JinaImageEmbeddingService.HttpClientName, client =>
+{
+    var baseUrl = builder.Configuration["Jina:Endpoint"];
+    client.BaseAddress = new Uri(string.IsNullOrWhiteSpace(baseUrl)
+        ? "https://api.jina.ai/"
+        : baseUrl.EndsWith('/') ? baseUrl : baseUrl + "/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
 // SFTP product import settings (Host, Port, Username, Password, FilePath).
 builder.Services.Configure<SftpSettings>(builder.Configuration.GetSection(SftpSettings.SectionName));
 
@@ -198,6 +223,18 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(1),
                 SegmentsPerWindow = 4,
                 PermitLimit = 20
+            }));
+
+    // Named policy required by [EnableRateLimiting("ImageSearch")] on the anonymous
+    // visual-search endpoint. Every request spends an Azure Computer Vision transaction,
+    // and the free (F0) tier caps at 20/min — a per-IP fixed window protects that quota.
+    options.AddPolicy("ImageSearch", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromMinutes(1),
+                PermitLimit = 10
             }));
 
     // Named policy required by [EnableRateLimiting("PasswordReset")] on the anonymous
@@ -240,6 +277,27 @@ builder.Services.AddSingleton<MarkdownFeatureChunker>();
 builder.Services.AddScoped<IEmbeddingService, GeminiEmbeddingService>();
 builder.Services.AddScoped<IVectorStore, InMemoryVectorStore>();
 builder.Services.AddScoped<IFeatureDocIngestionService, FeatureDocIngestionService>();
+
+// Visual product search ("search by photo") — Azure Image Retrieval embeddings +
+// in-memory cosine similarity over vectors stored in Postgres.
+// Visual-search embedding provider is selectable via config so the same build
+// runs the keyless CLIP sidecar locally (ImageEmbedding:Provider=Clip) and the
+// hosted Jina API when deployed (ImageEmbedding:Provider=Jina, the default).
+switch ((builder.Configuration["ImageEmbedding:Provider"] ?? "Jina").Trim().ToLowerInvariant())
+{
+    case "clip":
+        builder.Services.AddScoped<IImageEmbeddingService, ClipImageEmbeddingService>();
+        break;
+    case "azure":
+        builder.Services.AddScoped<IImageEmbeddingService, AzureImageEmbeddingService>();
+        break;
+    default:
+        builder.Services.AddScoped<IImageEmbeddingService, JinaImageEmbeddingService>();
+        break;
+}
+builder.Services.AddScoped<IImageVectorStore, InMemoryImageVectorStore>();
+builder.Services.AddScoped<IProductImageSearchService, ProductImageSearchService>();
+builder.Services.AddScoped<IProductImageIndexingService, ProductImageIndexingService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IProductAnalyticsService, ProductAnalyticsService>();

@@ -26,6 +26,7 @@ public class AppDbContext : DbContext
     public DbSet<ProductInteraction> ProductInteractions => Set<ProductInteraction>();
     public DbSet<UserExternalLogin> UserExternalLogins => Set<UserExternalLogin>();
     public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
+    public DbSet<ProductImageEmbedding> ProductImageEmbeddings => Set<ProductImageEmbedding>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -239,5 +240,17 @@ public class AppDbContext : DbContext
         // Embedding (float[]) maps to a Postgres real[] column automatically via Npgsql.
         modelBuilder.Entity<DocumentChunk>()
             .HasIndex(c => c.ContentHash);
+
+        // Product visual-search embeddings: one per product (1:1 satellite of Product),
+        // removed with the product. Embedding (float[]) maps to a Postgres real[] column.
+        modelBuilder.Entity<ProductImageEmbedding>()
+            .HasIndex(e => e.ProductId)
+            .IsUnique();
+
+        modelBuilder.Entity<ProductImageEmbedding>()
+            .HasOne(e => e.Product)
+            .WithOne()
+            .HasForeignKey<ProductImageEmbedding>(e => e.ProductId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

@@ -10,6 +10,10 @@ public class ProductQueryParameters
     public int? StoreId { get; set; }
     public decimal? MinPrice { get; set; }
     public decimal? MaxPrice { get; set; }
+
+    // Minimum average review rating (1–5). Products with no reviews are excluded when set.
+    public double? MinRating { get; set; }
+
     public string SortBy { get; set; } = "createdAt";
 
     [FromQuery(Name = "sortOrder")]

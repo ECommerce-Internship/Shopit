@@ -116,7 +116,7 @@ public class ProductService : IProductService
 
         var pageNumber = queryParameters.PageNumber <= 0 ? 1 : queryParameters.PageNumber;
         var pageSize = queryParameters.PageSize <= 0 ? 10 : queryParameters.PageSize;
-        var cacheKey = $"products:p{pageNumber}:s{pageSize}:search{queryParameters.Search?.Trim().ToLower()}:cat{queryParameters.CategoryId}:store{queryParameters.StoreSlug}:min{queryParameters.MinPrice}:max{queryParameters.MaxPrice}:sort{queryParameters.SortBy}:{queryParameters.SortDirection}";
+        var cacheKey = $"products:p{pageNumber}:s{pageSize}:search{queryParameters.Search?.Trim().ToLower()}:cat{queryParameters.CategoryId}:store{queryParameters.StoreSlug}:min{queryParameters.MinPrice}:max{queryParameters.MaxPrice}:rating{queryParameters.MinRating}:sort{queryParameters.SortBy}:{queryParameters.SortDirection}";
 
         PaginatedResult<ProductResponse>? cached = null;
         try
@@ -163,6 +163,15 @@ public class ProductService : IProductService
 
         if (queryParameters.MaxPrice.HasValue)
             productsQuery = productsQuery.Where(p => p.Price <= queryParameters.MaxPrice.Value);
+
+        // Average-rating floor. A product with no reviews has no average, so it's
+        // excluded whenever a minimum rating is requested.
+        if (queryParameters.MinRating.HasValue)
+        {
+            var minRating = queryParameters.MinRating.Value;
+            productsQuery = productsQuery.Where(p =>
+                p.Reviews.Any() && p.Reviews.Average(r => r.Rating) >= minRating);
+        }
 
         var sortBy = (queryParameters.SortBy ?? "createdAt").Trim().ToLowerInvariant();
         var sortDirection = (queryParameters.SortDirection ?? "desc").Trim().ToLowerInvariant();

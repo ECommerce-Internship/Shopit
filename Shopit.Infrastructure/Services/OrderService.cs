@@ -395,6 +395,7 @@ public class OrderService : IOrderService
         StoreOrders = order.StoreOrders
             .Select(so => new StoreOrderSummaryResponse
             {
+                StoreOrderId = so.Id,
                 StoreId = so.StoreId,
                 StoreName = so.Store?.Name ?? string.Empty,
                 Status = so.Status.ToString(),

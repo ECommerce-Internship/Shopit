@@ -30,5 +30,9 @@ public class CreateProductRequestValidator : AbstractValidator<CreateProductRequ
         RuleFor(x => x.InitialStock)
             .GreaterThanOrEqualTo(0)
             .WithMessage("Initial stock must be greater than or equal to 0.");
+
+        RuleFor(x => x.LowStockThreshold)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("Low stock threshold must be greater than or equal to 0.");
     }
 }

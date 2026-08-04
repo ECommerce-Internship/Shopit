@@ -384,6 +384,7 @@ public class ProductService : IProductService
             Inventory = new Inventory
             {
                 Quantity = request.InitialStock,
+                LowStockThreshold = request.LowStockThreshold,
                 UpdatedAt = DateTime.UtcNow
             }
         };

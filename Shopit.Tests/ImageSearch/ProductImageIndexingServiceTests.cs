@@ -76,6 +76,29 @@ public class ProductImageIndexingServiceTests
     }
 
     [Fact]
+    public async Task ReindexAsync_ForceWithUnchangedUrl_ReembedsEveryProduct()
+    {
+        await using var db = CreateDb();
+        await SeedProduct(db, 1, imageUrl: "https://blob/1.jpg");
+        await SeedProduct(db, 2, imageUrl: "https://blob/2.jpg");
+
+        var embedding = OkEmbedding();
+        var service = CreateService(db, embedding.Object, DownloadsOk());
+
+        // First run indexes both; a plain second run would skip both (unchanged URLs).
+        await service.ReindexAsync();
+        embedding.Invocations.Clear();
+
+        // force=true must re-embed every product despite the URLs being unchanged —
+        // the path used after switching the embedding provider (CLIP → Jina).
+        var result = await service.ReindexAsync(force: true);
+
+        result.Embedded.Should().Be(2);
+        result.Skipped.Should().Be(0);
+        embedding.Verify(e => e.EmbedImageAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
     public async Task ReindexAsync_DownloadFails_CountsAsFailedAndContinues()
     {
         await using var db = CreateDb();

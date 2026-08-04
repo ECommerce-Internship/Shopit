@@ -9,6 +9,9 @@
 # Local development app settings
 appsettings.Development.json
 
+# Local-only Docker Compose override (e.g. testing the Jina embedding provider)
+docker-compose.override.yml
+
 # Local SFTP server files (mounted into the dev sftp container)
 sftp-files/
 

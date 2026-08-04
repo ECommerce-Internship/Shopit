@@ -58,17 +58,25 @@ public class ImageSearchController : ControllerBase
     /// <summary>
     /// Rebuilds the visual-search index from the current catalog: embeds every
     /// product image that is new or changed since the last run. Idempotent and
-    /// throttled to respect the Azure free-tier limit. Admin only.
+    /// throttled to respect the embedding provider's rate limit. Admin only.
     /// </summary>
+    /// <param name="force">
+    /// When <c>true</c>, re-embed every product image even if its URL is unchanged.
+    /// Use this after switching the embedding provider (e.g. CLIP → Jina) so the
+    /// stored vectors are regenerated with the new model — otherwise the unchanged
+    /// URLs are skipped and search compares mismatched vector spaces.
+    /// </param>
     [HttpPost("reindex")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ImageIndexResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
-    public async Task<ActionResult<ImageIndexResultDto>> Reindex(CancellationToken cancellationToken)
+    public async Task<ActionResult<ImageIndexResultDto>> Reindex(
+        [FromQuery] bool force = false,
+        CancellationToken cancellationToken = default)
     {
-        var result = await _indexingService.ReindexAsync(cancellationToken);
+        var result = await _indexingService.ReindexAsync(force, cancellationToken);
         return Ok(result);
     }
 }

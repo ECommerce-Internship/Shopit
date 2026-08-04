@@ -45,7 +45,7 @@ public class ProductImageIndexingService : IProductImageIndexingService
         _throttleDelay = TimeSpan.FromMilliseconds(Math.Max(0, delayMs));
     }
 
-    public async Task<ImageIndexResultDto> ReindexAsync(CancellationToken cancellationToken = default)
+    public async Task<ImageIndexResultDto> ReindexAsync(bool force = false, CancellationToken cancellationToken = default)
     {
         var products = await _db.Products
             .AsNoTracking()
@@ -68,9 +68,12 @@ public class ProductImageIndexingService : IProductImageIndexingService
             seenProductIds.Add(product.Id);
             var imageUrl = product.ImageUrl!;
 
-            if (existingByProduct.TryGetValue(product.Id, out var row) && row.SourceImageUrl == imageUrl)
+            existingByProduct.TryGetValue(product.Id, out var row);
+            if (!force && row is not null && row.SourceImageUrl == imageUrl)
             {
-                // Image unchanged since last run — keep the stored vector, spend no Azure call.
+                // Image unchanged since last run — keep the stored vector, spend no
+                // embedding call. Bypassed when force=true (e.g. after switching the
+                // embedding provider, where the stored vector is from a different model).
                 skipped++;
                 continue;
             }
@@ -96,7 +99,7 @@ public class ProductImageIndexingService : IProductImageIndexingService
             }
             catch (ExternalServiceException ex)
             {
-                _logger.LogWarning(ex, "Skipping product {ProductId}: Azure failed to embed image.", product.Id);
+                _logger.LogWarning(ex, "Skipping product {ProductId}: embedding provider failed to embed image.", product.Id);
                 failed++;
                 continue;
             }

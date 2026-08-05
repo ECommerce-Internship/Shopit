@@ -510,6 +510,54 @@ public class ProductServiceTests
     }
 
     [Fact]
+    public async Task ImportExcel_LowStockThresholdProvided_SetsThresholdOnInventory()
+    {
+        await using var context = CreateContext();
+        await SeedCategoryAsync(context);
+
+        var service = CreateService(context);
+
+        await using var stream = CreateExcelStream(
+            new object?[] { "With Threshold", "SKU-THRESH", 10.99m, "Electronics", "Custom threshold", 5, 3 },
+            new object?[] { "Without Threshold", "SKU-DEFAULT", 20.99m, "Electronics", "Default threshold", 8 }
+        );
+
+        var result = await service.ImportAsync(stream);
+
+        result.AddedCount.Should().Be(2);
+        result.FailedCount.Should().Be(0);
+
+        var withThreshold = await context.Products
+            .Include(p => p.Inventory)
+            .SingleAsync(p => p.SKU == "SKU-THRESH");
+        withThreshold.Inventory!.LowStockThreshold.Should().Be(3);
+
+        var withoutThreshold = await context.Products
+            .Include(p => p.Inventory)
+            .SingleAsync(p => p.SKU == "SKU-DEFAULT");
+        withoutThreshold.Inventory!.LowStockThreshold.Should().Be(10);
+    }
+
+    [Fact]
+    public async Task ImportExcel_NegativeLowStockThreshold_IncludesRowInFailedList()
+    {
+        await using var context = CreateContext();
+        await SeedCategoryAsync(context);
+
+        var service = CreateService(context);
+
+        await using var stream = CreateExcelStream(
+            new object?[] { "Bad Threshold", "SKU-BADTHRESH", 10.99m, "Electronics", "Negative threshold", 5, -2 }
+        );
+
+        var result = await service.ImportAsync(stream);
+
+        result.AddedCount.Should().Be(0);
+        result.FailedCount.Should().Be(1);
+        result.Errors.Single().Reason.Should().Contain("LowStockThreshold must be a whole number greater than or equal to 0.");
+    }
+
+    [Fact]
     public async Task ImportExcel_InvalidPrice_IncludesRowInFailedList()
     {
         await using var context = CreateContext();
@@ -704,6 +752,7 @@ public class ProductServiceTests
         worksheet.Cells[1, 4].Value = "CategoryName";
         worksheet.Cells[1, 5].Value = "Description";
         worksheet.Cells[1, 6].Value = "InitialStock";
+        worksheet.Cells[1, 7].Value = "LowStockThreshold";
 
         for (var rowIndex = 0; rowIndex < rows.Length; rowIndex++)
         {

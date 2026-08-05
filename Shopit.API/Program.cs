@@ -356,12 +356,22 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+
+// Apply any pending EF migrations on startup in EVERY environment so the deployed
+// database stays in sync with the code. This was previously Dev-only, which left the
+// production database behind — e.g. the ProductInteractions table (click/time-spent
+// tracking) was never created on Render, so those inserts failed silently.
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    context.Database.Migrate();
+}
+
 if (app.Environment.IsDevelopment())
 {
     using (var scope = app.Services.CreateScope())
     {
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        context.Database.Migrate();
         DbInitializer.Seed(context);
 
         // SCRUM-166: ingest the feature docs on startup so the chat assistant can

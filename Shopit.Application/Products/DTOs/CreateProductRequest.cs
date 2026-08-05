@@ -17,4 +17,9 @@ public class CreateProductRequest
     public int StoreId { get; set; }
 
     public int InitialStock { get; set; }
+
+    // The stock level at or below which the product is flagged as low on stock.
+    // Defaults to 10 to preserve behaviour for callers (e.g. bulk import) that
+    // don't supply it.
+    public int LowStockThreshold { get; set; } = 10;
 }

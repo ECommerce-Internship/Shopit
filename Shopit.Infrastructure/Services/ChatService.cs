@@ -61,6 +61,11 @@ public class ChatService : IChatService
         "add_to_cart",
         "view_cart",
         "get_my_orders",
+        // Seller write tools operate on the caller's own stores/products: the "userId"
+        // is always forced to the seller's JWT id so they can never act as another seller.
+        "create_product",
+        "update_product",
+        "create_store",
     };
 
     /// <summary>
@@ -78,6 +83,24 @@ public class ChatService : IChatService
         // SCRUM-166: feature Q&A is available to every authenticated user (the docs
         // cover both customer- and seller-facing features). It takes no userId, so it
         // is intentionally absent from IdentityInjectedTools / HiddenParametersByTool.
+        "answer_feature_question",
+    };
+
+    /// <summary>
+    /// Tools a Seller is allowed to see and invoke. Sellers manage their own stores
+    /// and products through the chatbot: the write tools (create_product,
+    /// update_product, create_store) are self-scoped — their "userId" is injected
+    /// from the caller's JWT and hidden from the model (see IdentityInjectedTools /
+    /// HiddenParametersByTool) so a seller can only ever act on their own data.
+    /// Read/discovery tools shared with customers are included too.
+    /// </summary>
+    private static readonly HashSet<string> SellerAllowedTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "search_products",
+        "get_product",
+        "create_product",
+        "update_product",
+        "create_store",
         "answer_feature_question",
     };
 
@@ -110,9 +133,13 @@ public class ChatService : IChatService
             ["add_to_cart"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "userId" },
             ["view_cart"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "userId" },
             ["get_my_orders"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "userId" },
+            ["create_product"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "userId" },
+            ["update_product"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "userId" },
+            ["create_store"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "userId" },
         };
 
     private const string AdminRole = "Admin";
+    private const string SellerRole = "Seller";
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConversationStore _conversationStore;
@@ -285,6 +312,11 @@ public class ChatService : IChatService
 
         if (string.Equals(role, AdminRole, StringComparison.OrdinalIgnoreCase))
             return new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
+
+        if (string.Equals(role, SellerRole, StringComparison.OrdinalIgnoreCase))
+            return new HashSet<string>(
+                names.Where(SellerAllowedTools.Contains),
+                StringComparer.OrdinalIgnoreCase);
 
         return new HashSet<string>(
             names.Where(CustomerAllowedTools.Contains),

@@ -630,6 +630,13 @@ public class ProductService : IProductService
             if (!TryReadInt(worksheet, row, 6, out var initialStock) || initialStock < 0)
                 rowErrors.Add("InitialStock must be a whole number greater than or equal to 0.");
 
+            // LowStockThreshold is optional: a blank cell keeps the entity default (10).
+            var lowStockThreshold = 10;
+
+            if (!string.IsNullOrWhiteSpace(GetCellText(worksheet, row, 7))
+                && (!TryReadInt(worksheet, row, 7, out lowStockThreshold) || lowStockThreshold < 0))
+                rowErrors.Add("LowStockThreshold must be a whole number greater than or equal to 0.");
+
             if (rowErrors.Count > 0)
             {
                 result.Errors.Add(new ImportErrorDto
@@ -656,6 +663,7 @@ public class ProductService : IProductService
             {
                 Product = product,
                 Quantity = initialStock,
+                LowStockThreshold = lowStockThreshold,
                 UpdatedAt = now
             };
 
@@ -784,7 +792,7 @@ public async Task<int> BackfillEmbeddingsAsync(CancellationToken ct = default)
 
     private static void ValidateImportHeaders(ExcelWorksheet worksheet)
     {
-        var expectedHeaders = new[] { "Name", "SKU", "Price", "CategoryName", "Description", "InitialStock" };
+        var expectedHeaders = new[] { "Name", "SKU", "Price", "CategoryName", "Description", "InitialStock", "LowStockThreshold" };
 
         for (var column = 1; column <= expectedHeaders.Length; column++)
         {
@@ -797,7 +805,7 @@ public async Task<int> BackfillEmbeddingsAsync(CancellationToken ct = default)
 
     private static bool IsRowEmpty(ExcelWorksheet worksheet, int row)
     {
-        for (var column = 1; column <= 6; column++)
+        for (var column = 1; column <= 7; column++)
         {
             if (!string.IsNullOrWhiteSpace(GetCellText(worksheet, row, column)))
                 return false;

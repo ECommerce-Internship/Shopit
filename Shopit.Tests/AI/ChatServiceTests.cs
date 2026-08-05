@@ -181,4 +181,68 @@ public class ChatServiceTests
 
         result["userId"]!.GetValue<int>().Should().Be(5);
     }
+
+    // --- Seller role: create/update product and create store via the chatbot ---
+
+    private static readonly string[] SellerAndAllTools =
+    {
+        "search_products",
+        "get_product",
+        "create_product",
+        "update_product",
+        "create_store",
+        "answer_feature_question",
+        // tools a seller must NOT get
+        "get_dashboard_summary",
+        "get_low_stock_products",
+        "add_to_cart",
+    };
+
+    [Theory]
+    [InlineData("create_product")]
+    [InlineData("update_product")]
+    [InlineData("create_store")]
+    public void GetAllowedToolNames_SellerRole_IncludesSellerWriteTools(string tool)
+    {
+        var allowed = ChatService.GetAllowedToolNames("Seller", SellerAndAllTools);
+
+        allowed.Should().Contain(tool);
+    }
+
+    [Theory]
+    [InlineData("get_dashboard_summary")]
+    [InlineData("get_low_stock_products")]
+    [InlineData("add_to_cart")]
+    public void GetAllowedToolNames_SellerRole_ExcludesNonSellerTools(string tool)
+    {
+        var allowed = ChatService.GetAllowedToolNames("Seller", SellerAndAllTools);
+
+        allowed.Should().NotContain(tool);
+    }
+
+    [Fact]
+    public void GetAllowedToolNames_CustomerRole_ExcludesSellerWriteTools()
+    {
+        // A customer must never see the seller write tools, even though they exist on the server.
+        var allowed = ChatService.GetAllowedToolNames("Customer", SellerAndAllTools);
+
+        allowed.Should().NotContain("create_product");
+        allowed.Should().NotContain("update_product");
+        allowed.Should().NotContain("create_store");
+    }
+
+    [Theory]
+    [InlineData("create_product")]
+    [InlineData("update_product")]
+    [InlineData("create_store")]
+    public void ApplyIdentityInjection_SellerWriteTool_OverridesModelSuppliedUserId(string tool)
+    {
+        // The model tries to act as another seller (userId 999); the caller is seller 42.
+        var modelArgs = new JsonObject { ["userId"] = 999, ["name"] = "Widget" };
+
+        var result = ChatService.ApplyIdentityInjection(tool, modelArgs, callerUserId: 42, callerRole: "Seller");
+
+        result["userId"]!.GetValue<int>().Should().Be(42);
+        result["name"]!.GetValue<string>().Should().Be("Widget");
+    }
 }

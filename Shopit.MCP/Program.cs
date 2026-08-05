@@ -32,6 +32,7 @@ builder.Services.AddSingleton(new QueueClient(
 // Services
 builder.Services.AddValidatorsFromAssemblyContaining<CreateProductRequest>();
 builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddScoped<IStoreService, StoreService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
